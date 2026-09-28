@@ -5,8 +5,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite" // Fácil cambio a "postgresql" en producción
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model Event {

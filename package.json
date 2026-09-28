@@ -8,6 +8,7 @@
     "build:server": "npm run build --prefix server",
     "build:client": "npm run build --prefix client",
     "build": "npm run build:client && npm run build:server",
+    "build:render": "npm install && cd server && npm install && npx prisma db push && npm run build && cd ../client && npm install && npm run build",
     "start": "node server/dist/index.js",
     "prod": "npm run build && node server/dist/index.js",
     "tunnel": ".\\cloudflared.exe tunnel --url http://localhost:5173",
