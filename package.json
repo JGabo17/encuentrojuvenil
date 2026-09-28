@@ -1,0 +1,16 @@
+{
+  "name": "mvp_encuentrojuvenil",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build:server": "npm run build --prefix server",
+    "build:client": "npm run build --prefix client",
+    "build": "npm run build:client && npm run build:server",
+    "start": "node server/dist/index.js",
+    "prod": "npm run build && node server/dist/index.js",
+    "tunnel": ".\\cloudflared.exe tunnel --url http://localhost:5173",
+    "tunnel:prod": ".\\cloudflared.exe tunnel --url http://localhost:4000"
+  }
+}

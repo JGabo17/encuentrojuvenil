@@ -1,0 +1,65 @@
+// Prisma Schema para Encuentro Juvenil MVP
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // Fácil cambio a "postgresql" en producción
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id          String            @id @default(uuid())
+  name        String
+  code        String            @unique @default("DEFAULT")
+  status      String            @default("ACTIVE") // ACTIVE, INACTIVE, FINISHED
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  participants Participant[]
+  templates    MessageTemplate[]
+  messageLogs  MessageLog[]
+}
+
+model Participant {
+  id           String      @id @default(uuid())
+  eventId      String
+  event        Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name         String
+  sessionToken String      @unique
+  socketId     String?
+  isConnected  Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  messageLogs  MessageLog[]
+
+  @@index([eventId])
+  @@index([sessionToken])
+}
+
+model MessageTemplate {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name      String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([eventId])
+}
+
+model MessageLog {
+  id            String       @id @default(uuid())
+  eventId       String
+  event         Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sender        String       @default("ADMIN")
+  recipientType String       // "ALL" | "PARTICIPANT"
+  recipientId   String?
+  recipientName String?
+  recipient     Participant? @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+  content       String
+  sentAt        DateTime     @default(now())
+
+  @@index([eventId])
+}
