@@ -14,6 +14,7 @@ import type { ClientToServerEvents, ServerToClientEvents } from './types/index.j
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1); // Necesario para proxies inversos como Render, Cloudflare, etc.
 const port = process.env.PORT || 4000;
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
