@@ -1,37 +1,38 @@
 import { useState, useEffect } from 'react';
 import { ParticipantPage } from './pages/ParticipantPage';
 import { AdminPage } from './pages/AdminPage';
-import { Users, ShieldCheck, ExternalLink } from 'lucide-react';
+import { StagePage } from './pages/StagePage';
+import { Users, ShieldCheck, Tv, ExternalLink } from 'lucide-react';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'participant' | 'admin'>('participant');
+  const [currentView, setCurrentView] = useState<'participant' | 'admin' | 'stage'>('participant');
 
   // Detectar ruta inicial
   useEffect(() => {
-    const path = window.location.pathname;
-    const hash = window.location.hash;
-    if (path.includes('admin') || hash === '#admin') {
-      setCurrentView('admin');
-    } else {
-      setCurrentView('participant');
-    }
+    const detectRoute = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
 
-    const handlePopState = () => {
-      if (window.location.pathname.includes('admin') || window.location.hash === '#admin') {
+      if (path.includes('stage') || hash === '#stage' || path.includes('proyector')) {
+        setCurrentView('stage');
+      } else if (path.includes('admin') || hash === '#admin') {
         setCurrentView('admin');
       } else {
         setCurrentView('participant');
       }
     };
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    detectRoute();
+    window.addEventListener('popstate', detectRoute);
+    return () => window.removeEventListener('popstate', detectRoute);
   }, []);
 
-  const navigateTo = (view: 'participant' | 'admin') => {
+  const navigateTo = (view: 'participant' | 'admin' | 'stage') => {
     setCurrentView(view);
     if (view === 'admin') {
       window.history.pushState({}, '', '/admin');
+    } else if (view === 'stage') {
+      window.history.pushState({}, '', '/stage');
     } else {
       window.history.pushState({}, '', '/');
     }
@@ -65,7 +66,7 @@ export default function App() {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 16px',
+              padding: '8px 14px',
               borderRadius: '999px',
               background: currentView === 'participant' ? 'var(--primary)' : 'transparent',
               color: currentView === 'participant' ? '#fff' : 'var(--text-muted)',
@@ -75,7 +76,26 @@ export default function App() {
             }}
           >
             <Users size={16} />
-            Participante (/join)
+            Móvil (/join)
+          </button>
+
+          <button
+            onClick={() => navigateTo('stage')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '999px',
+              background: currentView === 'stage' ? 'var(--primary)' : 'transparent',
+              color: currentView === 'stage' ? '#fff' : 'var(--text-muted)',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            <Tv size={16} />
+            Auditorio (/stage)
           </button>
 
           <button
@@ -84,7 +104,7 @@ export default function App() {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '8px 16px',
+              padding: '8px 14px',
               borderRadius: '999px',
               background: currentView === 'admin' ? 'var(--primary)' : 'transparent',
               color: currentView === 'admin' ? '#fff' : 'var(--text-muted)',
@@ -117,7 +137,9 @@ export default function App() {
       )}
 
       {/* Renderizado de la vista activa */}
-      {currentView === 'participant' ? <ParticipantPage /> : <AdminPage />}
+      {currentView === 'participant' && <ParticipantPage />}
+      {currentView === 'stage' && <StagePage />}
+      {currentView === 'admin' && <AdminPage />}
     </div>
   );
 }

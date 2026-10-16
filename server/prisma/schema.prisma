@@ -17,8 +17,28 @@ model Event {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   participants Participant[]
+  teams        Team[]
+  questions    Question[]
   templates    MessageTemplate[]
   messageLogs  MessageLog[]
+  pairings     Pairing[]
+}
+
+model Team {
+  id          String        @id @default(uuid())
+  eventId     String
+  event       Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  motto       String?
+  avatar      String        @default("🛡️")
+  pin         String        // PIN de 4 dígitos
+  score       Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  members     Participant[]
+
+  @@unique([eventId, name])
+  @@index([eventId])
 }
 
 model Participant {
@@ -26,6 +46,9 @@ model Participant {
   eventId      String
   event        Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   name         String
+  role         String      @default("MEMBER") // "CAPTAIN" | "MEMBER"
+  teamId       String?
+  team         Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
   sessionToken String      @unique
   socketId     String?
   isConnected  Boolean     @default(false)
@@ -34,6 +57,7 @@ model Participant {
   messageLogs  MessageLog[]
 
   @@index([eventId])
+  @@index([teamId])
   @@index([sessionToken])
 }
 
@@ -62,4 +86,49 @@ model MessageLog {
   sentAt        DateTime     @default(now())
 
   @@index([eventId])
+}
+
+model Question {
+  id                 String   @id @default(uuid())
+  eventId            String
+  event              Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  text               String
+  type               String   @default("ORAL_DEFENSE") // "ORAL_DEFENSE" | "MULTIPLE_CHOICE"
+  options            String?  // JSON array string ej: '["Opción A", "Opción B"]'
+  correctOptionIndex Int?     // 0, 1, 2, 3...
+  points             Int      @default(100)
+  timeLimit          Int      @default(20) // segundos
+  order              Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([eventId])
+}
+
+model Pairing {
+  id        String        @id @default(uuid())
+  eventId   String
+  event     Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  memberIds String        // JSON array de IDs de participantes ej: '["id1", "id2"]'
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  messages  ChatMessage[]
+
+  @@index([eventId])
+}
+
+model ChatMessage {
+  id                 String   @id @default(uuid())
+  pairingId          String
+  pairing            Pairing  @relation(fields: [pairingId], references: [id], onDelete: Cascade)
+  senderId           String
+  senderName         String
+  senderTeamName     String
+  content            String
+  photoUrl           String?  // Data URL o path de la fotografía de grupo/selfie
+  isApprovedForMural Boolean  @default(false)
+  sentAt             DateTime @default(now())
+
+  @@index([pairingId])
+  @@index([isApprovedForMural])
 }

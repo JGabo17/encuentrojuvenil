@@ -1,6 +1,18 @@
-import type { MessageTemplate, MessageLog, Participant } from '../../../shared/types/index.js';
+import type { MessageTemplate, MessageLog, Participant, Team, StageData } from '../../../shared/types/index.js';
 
 const API_BASE = '/api';
+
+export async function fetchTeams(): Promise<Team[]> {
+  const res = await fetch(`${API_BASE}/teams`);
+  if (!res.ok) throw new Error('Error al obtener lista de equipos');
+  return res.json();
+}
+
+export async function fetchStageData(): Promise<StageData> {
+  const res = await fetch(`${API_BASE}/stage`);
+  if (!res.ok) throw new Error('Error al obtener datos de stage');
+  return res.json();
+}
 
 export function getAdminToken(): string | null {
   return localStorage.getItem('encuentro_admin_token');

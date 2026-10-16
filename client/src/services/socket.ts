@@ -6,7 +6,11 @@ import type { ClientToServerEvents, ServerToClientEvents } from '../../../shared
 export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
   autoConnect: true,
   reconnection: true,
-  reconnectionAttempts: 15,
-  reconnectionDelay: 1000,
+  reconnectionAttempts: 50,
+  reconnectionDelay: 800,
+  reconnectionDelayMax: 4000,
+  randomizationFactor: 0.5, // Dispersa reconexiones entre 400ms y 1200ms para evitar thundering herd
+  timeout: 15000,
   transports: ['websocket', 'polling']
 });
+

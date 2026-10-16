@@ -22,6 +22,8 @@ pnpm-debug.log*
 # Base de datos local
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 dev.db
 
 # Ejecutables temporales

@@ -1,10 +1,12 @@
 import { Server, Socket } from 'socket.io';
+import prisma from '../services/db.js';
 import { verifyAdminToken } from '../middleware/auth.js';
 import {
   registerOrReconnectParticipant,
   setParticipantDisconnected,
   getAllParticipants,
-  getParticipantById
+  getParticipantById,
+  kickParticipant
 } from '../services/participantService.js';
 import {
   replaceVariables,
@@ -22,14 +24,48 @@ import {
 } from '../utils/validators.js';
 import type { ClientToServerEvents, ServerToClientEvents, LiveMessagePayload } from '../types/index.js';
 
+import {
+  createTeamWithCaptain,
+  joinTeamAsMember,
+  getAllTeams,
+  getStageData,
+  adjustTeamScore,
+  transferCaptaincy,
+  resetEventData
+} from '../services/teamService.js';
+
+import {
+  gameEngine,
+  getAllQuestions,
+  createQuestion
+} from '../services/triviaService.js';
+
+import {
+  generateEventPairings,
+  getPairingDataForParticipant,
+  getAllPairingsForEvent,
+  createChatMessage,
+  getModerationQueue,
+  moderateChatMessagePhoto,
+  getApprovedMuralPhotos,
+  isChatEnabled,
+  setChatEnabled
+} from '../services/pairingService.js';
+
 interface SocketData {
   isAdmin?: boolean;
   participantId?: string;
   participantName?: string;
   eventId?: string;
+  teamId?: string;
+  teamName?: string;
+  role?: string;
 }
 
 export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>) {
+  // Inicializar servidor de socket en el motor de juego
+  gameEngine.setSocketServer(io);
+
   io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>) => {
     // ----------------------------------------------------
     // Fase 1 Hello / Ping
@@ -64,22 +100,478 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
         socket.data.participantId = participant.id;
         socket.data.participantName = participant.name;
         socket.data.eventId = participant.eventId;
+        socket.data.teamId = participant.teamId || undefined;
+        socket.data.teamName = participant.team?.name;
+        socket.data.role = participant.role || 'MEMBER';
 
         // Unir al socket a la sala del participante y del evento
         socket.join(`participant:${participant.id}`);
         socket.join(`event:${participant.eventId}`);
+        if (participant.teamId) {
+          socket.join(`team:${participant.teamId}`);
+        }
 
-        // Notificar a administradores
+        // Notificar a administradores y stage
         io.to('room:admin').emit('admin:participant-joined', participant);
         io.to('room:admin').emit('admin:participant-status', {
           participantId: participant.id,
           isConnected: true
         });
 
+        const stageData = await getStageData(participant.eventId);
+        io.to('room:stage').emit('stage:update', stageData);
+
         callback?.({ success: true, participant });
       } catch (err: any) {
         console.error('[participant:join] Error:', err);
         callback?.({ success: false, error: err.message || 'Error al conectar participante' });
+      }
+    });
+
+    // ----------------------------------------------------
+    // Fase 1: Creación de Equipo (Capitán)
+    // ----------------------------------------------------
+    socket.on('team:create', async (data, callback) => {
+      try {
+        if (!data.teamName || !data.teamName.trim()) {
+          callback?.({ success: false, error: 'El nombre del equipo es obligatorio.' });
+          return;
+        }
+        if (!data.captainName || !data.captainName.trim()) {
+          callback?.({ success: false, error: 'El nombre del capitán es obligatorio.' });
+          return;
+        }
+
+        const result = await createTeamWithCaptain({
+          teamName: data.teamName,
+          motto: data.motto,
+          avatar: data.avatar || '🛡️',
+          captainName: data.captainName,
+          sessionToken: data.sessionToken,
+          socketId: socket.id
+        });
+
+        // Guardar metadatos en socket
+        socket.data.participantId = result.participant.id;
+        socket.data.participantName = result.participant.name;
+        socket.data.eventId = result.participant.eventId;
+        socket.data.teamId = result.team.id;
+        socket.data.teamName = result.team.name;
+        socket.data.role = 'CAPTAIN';
+
+        socket.join(`participant:${result.participant.id}`);
+        socket.join(`team:${result.team.id}`);
+        socket.join(`event:${result.participant.eventId}`);
+
+        // Notificar a administradores y stage
+        io.to('room:admin').emit('admin:participant-joined', result.participant as any);
+        io.to('room:admin').emit('admin:participant-status', {
+          participantId: result.participant.id,
+          isConnected: true
+        });
+
+        const [teams, stageData] = await Promise.all([
+          getAllTeams(result.participant.eventId, false),
+          getStageData(result.participant.eventId)
+        ]);
+
+        io.emit('teams:update', teams);
+        io.to('room:stage').emit('stage:update', stageData);
+
+        callback?.({
+          success: true,
+          team: result.team,
+          participant: result.participant as any
+        });
+      } catch (err: any) {
+        console.error('[team:create] Error:', err);
+        callback?.({ success: false, error: err.message || 'Error al crear el equipo.' });
+      }
+    });
+
+    // ----------------------------------------------------
+    // Fase 1: Unirse a un Equipo con PIN (Integrante)
+    // ----------------------------------------------------
+    socket.on('team:join', async (data, callback) => {
+      try {
+        if (!data.teamId) {
+          callback?.({ success: false, error: 'Debes seleccionar un equipo.' });
+          return;
+        }
+        if (!data.pin || !data.pin.trim()) {
+          callback?.({ success: false, error: 'Debes ingresar el PIN de 4 dígitos.' });
+          return;
+        }
+        if (!data.name || !data.name.trim()) {
+          callback?.({ success: false, error: 'Debes ingresar tu nombre.' });
+          return;
+        }
+
+        const result = await joinTeamAsMember({
+          teamId: data.teamId,
+          pin: data.pin,
+          name: data.name,
+          sessionToken: data.sessionToken,
+          socketId: socket.id
+        });
+
+        // Guardar metadatos en socket
+        socket.data.participantId = result.participant.id;
+        socket.data.participantName = result.participant.name;
+        socket.data.eventId = result.participant.eventId;
+        socket.data.teamId = result.team.id;
+        socket.data.teamName = result.team.name;
+        socket.data.role = 'MEMBER';
+
+        socket.join(`participant:${result.participant.id}`);
+        socket.join(`team:${result.team.id}`);
+        socket.join(`event:${result.participant.eventId}`);
+
+        // Notificar a administradores y stage
+        io.to('room:admin').emit('admin:participant-joined', result.participant as any);
+        io.to('room:admin').emit('admin:participant-status', {
+          participantId: result.participant.id,
+          isConnected: true
+        });
+
+        const [teams, stageData] = await Promise.all([
+          getAllTeams(result.participant.eventId, false),
+          getStageData(result.participant.eventId)
+        ]);
+
+        io.emit('teams:update', teams);
+        io.to('room:stage').emit('stage:update', stageData);
+
+        callback?.({
+          success: true,
+          team: result.team,
+          participant: result.participant as any
+        });
+      } catch (err: any) {
+        console.error('[team:join] Error:', err);
+        callback?.({ success: false, error: err.message || 'Error al unirse al equipo.' });
+      }
+    });
+
+    // ----------------------------------------------------
+    // Fase 1: Listado de Equipos disponibles
+    // ----------------------------------------------------
+    socket.on('teams:get', async (callback) => {
+      try {
+        const teams = await getAllTeams();
+        callback?.({ success: true, teams });
+      } catch (err: any) {
+        callback?.({ success: false, teams: [] });
+      }
+    });
+
+    // ----------------------------------------------------
+    // Fase 1, 2 y 3: Auditorio / Pantalla Gigante (Stage)
+    // ----------------------------------------------------
+    socket.on('stage:join', async (callback) => {
+      try {
+        socket.join('room:stage');
+        const data = await getStageData();
+        const gameState = gameEngine.getState();
+        const eventId = data.teams[0]?.eventId || 'default';
+        const muralPhotos = await getApprovedMuralPhotos(eventId);
+        data.muralPhotos = muralPhotos;
+        callback?.({ success: true, data, gameState });
+      } catch (err: any) {
+        console.error('[stage:join] Error:', err);
+        callback?.({
+          success: false,
+          data: { teams: [], totalParticipants: 0, connectedCount: 0 },
+          gameState: gameEngine.getState()
+        });
+      }
+    });
+
+    // ----------------------------------------------------
+    // Fase 2: Pulsador Digital (Buzzer) - Solo Capitanes
+    // ----------------------------------------------------
+    socket.on('captain:buzz', async (callback) => {
+      try {
+        if (!socket.data.teamId || socket.data.role !== 'CAPTAIN') {
+          callback?.({ success: false, won: false, error: 'Solo el capitán de cada equipo tiene habilitado el pulsador.' });
+          return;
+        }
+
+        const captainName = socket.data.participantName || 'Capitán';
+        const result = await gameEngine.handleBuzzerPress(socket.data.teamId, captainName);
+        callback?.({ success: true, won: result.won });
+      } catch (err: any) {
+        console.error('[captain:buzz] Error:', err);
+        callback?.({ success: false, won: false, error: err.message || 'Error en pulsador.' });
+      }
+    });
+
+    // ----------------------------------------------------
+    // Fase 2: Respuesta de Opción Múltiple (Capitán)
+    // ----------------------------------------------------
+    socket.on('captain:submit-choice', async (data, callback) => {
+      try {
+        if (!socket.data.teamId || socket.data.role !== 'CAPTAIN') {
+          callback?.({ success: false, error: 'Solo el capitán puede emitir la respuesta.' });
+          return;
+        }
+
+        await gameEngine.handleChoiceSubmit(socket.data.teamId, data.choiceIndex);
+        callback?.({ success: true });
+      } catch (err: any) {
+        console.error('[captain:submit-choice] Error:', err);
+        callback?.({ success: false, error: err.message || 'Error al enviar respuesta.' });
+      }
+    });
+
+    // Estado del juego para reconexiones
+    socket.on('game:get-state', (callback) => {
+      callback?.({ state: gameEngine.getState() });
+    });
+
+    // ----------------------------------------------------
+    // Fase 2: Moderador / Admin Trivia Control
+    // ----------------------------------------------------
+    socket.on('admin:start-question', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        await gameEngine.startQuestion(data.questionId);
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('admin:start-countdown', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        gameEngine.startCountdown(data?.countdownSeconds || 7);
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('admin:cancel-question', async (callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        gameEngine.cancelQuestion();
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('admin:grade-defense', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        await gameEngine.gradeOralDefense(data.grade);
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('admin:show-leaderboard', async (callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false });
+      try {
+        await gameEngine.showLeaderboard();
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false });
+      }
+    });
+
+    socket.on('admin:reset-to-lobby', async (callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false });
+      try {
+        gameEngine.resetToLobby();
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false });
+      }
+    });
+
+    socket.on('admin:create-question', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        const question = await createQuestion(data);
+        callback?.({ success: true, question });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('admin:get-questions', async (callback) => {
+      try {
+        const questions = await getAllQuestions();
+        callback?.({ success: true, questions });
+      } catch (err: any) {
+        callback?.({ success: false, questions: [] });
+      }
+    });
+
+    // ----------------------------------------------------
+    // Fase 3: Encuentro e Integración (Chat en duplas & Mural social)
+    // ----------------------------------------------------
+    socket.on('admin:start-pairings', async (callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        const stageData = await getStageData();
+        const eventId = stageData.teams[0]?.eventId || 'default';
+        const result = await generateEventPairings(eventId);
+
+        // Optimización masiva: mapear todas las duplas en 1 única pasada O(1) de BD
+        const allPairingsMap = await getAllPairingsForEvent(eventId);
+        for (const [participantId, pairingData] of allPairingsMap.entries()) {
+          io.to(`participant:${participantId}`).emit('pairing:assigned', pairingData);
+          // Auto-unir sockets activos a la sala de la dupla
+          const sockets = await io.in(`participant:${participantId}`).fetchSockets();
+          for (const s of sockets) {
+            s.join(`pairing:${pairingData.id}`);
+          }
+        }
+
+        io.emit('chat:status-change', { chatEnabled: true });
+
+        const queue = await getModerationQueue(eventId);
+        io.to('room:admin').emit('admin:moderation-queue-update', queue);
+
+        callback?.({ success: true, count: result.totalPairings });
+      } catch (err: any) {
+        console.error('[admin:start-pairings] Error:', err);
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('admin:toggle-chat', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, chatEnabled: isChatEnabled() });
+      try {
+        const updated = setChatEnabled(data.enabled);
+        io.emit('chat:status-change', { chatEnabled: updated });
+        callback?.({ success: true, chatEnabled: updated });
+      } catch (err: any) {
+        callback?.({ success: false, chatEnabled: isChatEnabled() });
+      }
+    });
+
+    socket.on('admin:get-moderation-queue', async (callback) => {
+      try {
+        const stageData = await getStageData();
+        const eventId = stageData.teams[0]?.eventId || 'default';
+        const queue = await getModerationQueue(eventId);
+        callback?.({ success: true, queue });
+      } catch (err: any) {
+        callback?.({ success: false, queue: [] });
+      }
+    });
+
+    socket.on('admin:moderate-photo', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false });
+      try {
+        await moderateChatMessagePhoto(data.messageId, data.approved);
+        const stageData = await getStageData();
+        const eventId = stageData.teams[0]?.eventId || 'default';
+        const [photos, queue] = await Promise.all([
+          getApprovedMuralPhotos(eventId),
+          getModerationQueue(eventId)
+        ]);
+
+        io.to('room:stage').emit('stage:mural-update', photos);
+        io.to('room:admin').emit('admin:moderation-queue-update', queue);
+
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false });
+      }
+    });
+
+    socket.on('participant:get-pairing', async (callback) => {
+      try {
+        const pId = socket.data.participantId;
+        if (!pId) return callback?.({ success: false, chatEnabled: isChatEnabled() });
+
+        const pairing = await getPairingDataForParticipant(pId);
+        if (pairing) {
+          socket.join(`pairing:${pairing.id}`);
+        }
+        callback?.({ success: true, pairing: pairing || undefined, chatEnabled: isChatEnabled() });
+      } catch (err: any) {
+        callback?.({ success: false, chatEnabled: isChatEnabled() });
+      }
+    });
+
+    socket.on('chat:send-message', async (data, callback) => {
+      try {
+        if (!isChatEnabled()) {
+          return callback?.({ success: false, error: 'El chat se encuentra pausado por el moderador.' });
+        }
+
+        const senderId = socket.data.participantId;
+        const senderName = socket.data.participantName || 'Participante';
+        const eventId = socket.data.eventId || 'default';
+
+        let senderTeamName = socket.data.teamName || 'Sin Equipo';
+        if (!socket.data.teamName && socket.data.teamId) {
+          const team = (await getAllTeams()).find((t) => t.id === socket.data.teamId);
+          if (team) {
+            senderTeamName = team.name;
+            socket.data.teamName = team.name;
+          }
+        }
+
+        if (!senderId) {
+          return callback?.({ success: false, error: 'No se identificó el participante.' });
+        }
+
+        const message = await createChatMessage({
+          pairingId: data.pairingId,
+          senderId,
+          senderName,
+          senderTeamName,
+          content: data.content,
+          photoUrl: data.photoUrl
+        });
+
+        // 1. Asegurar que el socket del remitente esté en la sala de la dupla
+        socket.join(`pairing:${data.pairingId}`);
+
+        // 2. Emitir a la sala de la dupla
+        io.to(`pairing:${data.pairingId}`).emit('chat:new-message', message);
+
+        // 3. Respaldo de entrega inmediata a las salas personales de los integrantes
+        try {
+          const pRec = await prisma.pairing.findUnique({ where: { id: data.pairingId } });
+          if (pRec?.memberIds) {
+            const memberIds: string[] = JSON.parse(pRec.memberIds);
+            for (const mId of memberIds) {
+              io.to(`participant:${mId}`).emit('chat:new-message', message);
+            }
+          }
+        } catch (e) {}
+
+        // Si tiene foto, enviar a la bandeja de moderación del admin
+        if (data.photoUrl) {
+          io.to('room:admin').emit('admin:photo-submitted', message);
+          const queue = await getModerationQueue(eventId);
+          io.to('room:admin').emit('admin:moderation-queue-update', queue);
+        }
+
+        callback?.({ success: true, message });
+      } catch (err: any) {
+        console.error('[chat:send-message] Error:', err);
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    socket.on('stage:get-mural', async (callback) => {
+      try {
+        const stageData = await getStageData();
+        const eventId = stageData.teams[0]?.eventId || 'default';
+        const photos = await getApprovedMuralPhotos(eventId);
+        callback?.({ success: true, photos });
+      } catch (err: any) {
+        callback?.({ success: false, photos: [] });
       }
     });
 
@@ -102,9 +594,13 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
         socket.data.isAdmin = true;
         socket.join('room:admin');
 
-        // Enviar lista actualizada de participantes
-        const participants = await getAllParticipants();
+        // Enviar lista actualizada de participantes y equipos con PIN
+        const [participants, teams] = await Promise.all([
+          getAllParticipants(),
+          getAllTeams(undefined, true)
+        ]);
         socket.emit('admin:participants-update', participants);
+        socket.emit('teams:update', teams);
 
         callback?.({ success: true });
       } catch (err: any) {
@@ -240,6 +736,138 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     // ----------------------------------------------------
+    // Contingencias y Superpoderes de Administración en Vivo
+    // ----------------------------------------------------
+
+    // 1. Rebotar Pregunta al Auditorio
+    socket.on('admin:rebound-question', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        gameEngine.reboundQuestion(data?.seconds || 15);
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // 2. Ajuste Manual de Puntos a un Equipo (+/- Pts)
+    socket.on('admin:adjust-team-points', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        await adjustTeamScore(data.teamId, data.deltaPoints);
+
+        const [teamsPublic, teamsAdmin, stageData] = await Promise.all([
+          getAllTeams(undefined, false),
+          getAllTeams(undefined, true),
+          getStageData()
+        ]);
+
+        io.emit('teams:update', teamsPublic);
+        io.to('room:admin').emit('teams:update', teamsAdmin);
+        io.emit('game:score-updated', teamsPublic);
+        io.to('room:stage').emit('stage:update', stageData);
+
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // 3. Expulsar Participante Troll o Duplicado
+    socket.on('admin:kick-participant', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        const kicked = await kickParticipant(data.participantId);
+        if (kicked) {
+          // Notificar y expulsar los sockets asociados a ese participante
+          io.to(`participant:${data.participantId}`).emit('participant:kicked', {
+            reason: 'Has sido retirado del evento por el moderador.'
+          });
+          io.in(`participant:${data.participantId}`).disconnectSockets(true);
+
+          const [participants, teamsPublic, teamsAdmin, stageData] = await Promise.all([
+            getAllParticipants(),
+            getAllTeams(undefined, false),
+            getAllTeams(undefined, true),
+            getStageData()
+          ]);
+
+          io.to('room:admin').emit('admin:participants-update', participants);
+          io.emit('teams:update', teamsPublic);
+          io.to('room:admin').emit('teams:update', teamsAdmin);
+          io.to('room:stage').emit('stage:update', stageData);
+        }
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // 4. Transferir Capitanía (en caso de batería baja o reconexión fallida)
+    socket.on('admin:transfer-captain', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        await transferCaptaincy(data.teamId, data.newCaptainId);
+
+        // Notificar al participante promovido
+        io.to(`participant:${data.newCaptainId}`).emit('participant:role-updated', { role: 'CAPTAIN' });
+
+        // Actualizar socket data del nuevo capitán en memoria
+        const sockets = await io.in(`participant:${data.newCaptainId}`).fetchSockets();
+        for (const s of sockets) {
+          s.data.role = 'CAPTAIN';
+        }
+
+        const [participants, teamsPublic, teamsAdmin, stageData] = await Promise.all([
+          getAllParticipants(),
+          getAllTeams(undefined, false),
+          getAllTeams(undefined, true),
+          getStageData()
+        ]);
+
+        io.to('room:admin').emit('admin:participants-update', participants);
+        io.emit('teams:update', teamsPublic);
+        io.to('room:admin').emit('teams:update', teamsAdmin);
+        io.to('room:stage').emit('stage:update', stageData);
+
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // 5. Botón de Reseteo Maestro del Evento (Doble check con texto 'RESET')
+    socket.on('admin:reset-event', async (data, callback) => {
+      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (data.confirmText !== 'RESET') {
+        return callback?.({ success: false, error: 'Debes escribir exactamente "RESET" para confirmar el reinicio.' });
+      }
+      try {
+        await resetEventData();
+        gameEngine.resetToLobby();
+
+        // Notificar a todos los dispositivos en el auditorio para reiniciar su vista local
+        io.emit('event:reset');
+
+        const [participants, teamsPublic, teamsAdmin, stageData] = await Promise.all([
+          getAllParticipants(),
+          getAllTeams(undefined, false),
+          getAllTeams(undefined, true),
+          getStageData()
+        ]);
+
+        io.to('room:admin').emit('admin:participants-update', participants);
+        io.emit('teams:update', teamsPublic);
+        io.to('room:admin').emit('teams:update', teamsAdmin);
+        io.to('room:stage').emit('stage:update', stageData);
+
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // ----------------------------------------------------
     // Manejo de Desconexión
     // ----------------------------------------------------
     socket.on('disconnect', async (reason) => {
@@ -250,6 +878,13 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
             participantId: updated.id,
             isConnected: false
           });
+
+          // Actualizar auditorio si hay evento activo
+          if (socket.data.eventId) {
+            getStageData(socket.data.eventId).then((stageData) => {
+              io.to('room:stage').emit('stage:update', stageData);
+            }).catch(() => {});
+          }
         }
       }
     });

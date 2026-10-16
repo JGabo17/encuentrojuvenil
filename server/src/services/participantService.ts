@@ -8,6 +8,20 @@ function mapToSharedParticipant(p: any): SharedParticipant {
     id: p.id,
     eventId: p.eventId,
     name: p.name,
+    role: (p.role || 'MEMBER') as any,
+    teamId: p.teamId || null,
+    team: p.team
+      ? {
+          id: p.team.id,
+          eventId: p.team.eventId,
+          name: p.team.name,
+          motto: p.team.motto || null,
+          avatar: p.team.avatar || '🛡️',
+          pin: p.role === 'CAPTAIN' ? p.team.pin : undefined,
+          score: p.team.score ?? 0,
+          memberCount: p.team.members ? p.team.members.length : 0
+        }
+      : null,
     sessionToken: p.sessionToken,
     socketId: p.socketId,
     isConnected: p.isConnected,
@@ -26,7 +40,8 @@ export async function registerOrReconnectParticipant(data: {
   // Si viene con sessionToken, intentamos recuperar la sesión existente
   if (data.sessionToken) {
     const existing = await prisma.participant.findUnique({
-      where: { sessionToken: data.sessionToken }
+      where: { sessionToken: data.sessionToken },
+      include: { team: { include: { members: true } } }
     });
 
     if (existing) {
@@ -37,7 +52,8 @@ export async function registerOrReconnectParticipant(data: {
           socketId: data.socketId,
           isConnected: true,
           updatedAt: new Date()
-        }
+        },
+        include: { team: { include: { members: true } } }
       });
       return mapToSharedParticipant(updated);
     }
@@ -52,7 +68,8 @@ export async function registerOrReconnectParticipant(data: {
       sessionToken,
       socketId: data.socketId,
       isConnected: true
-    }
+    },
+    include: { team: true }
   });
 
   return mapToSharedParticipant(created);
@@ -93,3 +110,25 @@ export async function getParticipantById(id: string) {
   });
   return participant ? mapToSharedParticipant(participant) : null;
 }
+
+export async function kickParticipant(id: string): Promise<SharedParticipant | null> {
+  const participant = await prisma.participant.findUnique({
+    where: { id },
+    include: { team: true }
+  });
+
+  if (!participant) return null;
+
+  // Si tenía mensajes de chat asociados, eliminarlos para evitar problemas de FK
+  await prisma.chatMessage.deleteMany({
+    where: { senderId: id }
+  });
+
+  // Eliminar el participante de la base de datos
+  await prisma.participant.delete({
+    where: { id }
+  });
+
+  return mapToSharedParticipant(participant);
+}
+

@@ -103,7 +103,11 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
     origin: '*',
     methods: ['GET', 'POST'],
     credentials: true
-  }
+  },
+  maxHttpBufferSize: 2e6, // 2MB máximo por mensaje (seguridad contra overflow de memoria)
+  pingTimeout: 25000,     // Tolerancia a Wi-Fi congestionado de iglesia
+  pingInterval: 10000,
+  transports: ['websocket', 'polling']
 });
 
 // Configurar WebSockets
@@ -120,3 +124,13 @@ getOrCreateActiveEvent().then((activeEvent) => {
 }).catch((err) => {
   console.error('[Error de inicio]', err);
 });
+
+// Guardas de seguridad para evitar caídas en producción ante excepciones inesperadas
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Unhandled Rejection]', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception]', err);
+});
+

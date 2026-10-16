@@ -8,6 +8,8 @@ import { templateSchema } from '../utils/validators.js';
 
 const router = Router();
 
+import { getAllTeams, getStageData } from '../services/teamService.js';
+
 // Evento público activo
 router.get('/event', async (req, res) => {
   try {
@@ -20,6 +22,26 @@ router.get('/event', async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Error al obtener evento' });
+  }
+});
+
+// Listado público de equipos (sin PIN)
+router.get('/teams', async (req, res) => {
+  try {
+    const teams = await getAllTeams(undefined, false);
+    res.json(teams);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al obtener equipos' });
+  }
+});
+
+// Datos para la pantalla de auditorio / proyector
+router.get('/stage', async (req, res) => {
+  try {
+    const stage = await getStageData();
+    res.json(stage);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error al obtener datos de stage' });
   }
 });
 
