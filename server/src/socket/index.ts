@@ -30,6 +30,7 @@ import {
   getAllTeams,
   getStageData,
   adjustTeamScore,
+  setTeamScore,
   transferCaptaincy,
   resetEventData
 } from '../services/teamService.js';
@@ -988,6 +989,29 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         await adjustTeamScore(data.teamId, data.deltaPoints);
+
+        const [teamsPublic, teamsAdmin, stageData] = await Promise.all([
+          getAllTeams(undefined, false),
+          getAllTeams(undefined, true),
+          getStageData()
+        ]);
+
+        io.emit('teams:update', teamsPublic);
+        io.to('room:admin').emit('teams:update', teamsAdmin);
+        io.emit('game:score-updated', teamsPublic);
+        io.to('room:stage').emit('stage:update', stageData);
+
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // 2.1 Asignar Puntaje Exacto a un Equipo (Fijar Puntos)
+    socket.on('admin:set-team-score', async (data, callback) => {
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        await setTeamScore(data.teamId, data.score);
 
         const [teamsPublic, teamsAdmin, stageData] = await Promise.all([
           getAllTeams(undefined, false),

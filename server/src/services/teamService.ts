@@ -283,6 +283,47 @@ export async function adjustTeamScore(teamId: string, deltaPoints: number): Prom
   return mapToSharedTeam(updated, true);
 }
 
+export async function setTeamScore(teamId: string, exactScore: number): Promise<SharedTeam> {
+  const current = await prisma.team.findUnique({
+    where: { id: teamId },
+    include: {
+      members: {
+        select: {
+          id: true,
+          name: true,
+          role: true,
+          isConnected: true
+        }
+      },
+      _count: { select: { members: true } }
+    }
+  });
+
+  if (!current) {
+    throw new Error('Equipo no encontrado.');
+  }
+
+  const newScore = Math.max(0, Math.floor(Number(exactScore) || 0));
+
+  const updated = await prisma.team.update({
+    where: { id: teamId },
+    data: { score: newScore },
+    include: {
+      members: {
+        select: {
+          id: true,
+          name: true,
+          role: true,
+          isConnected: true
+        }
+      },
+      _count: { select: { members: true } }
+    }
+  });
+
+  return mapToSharedTeam(updated, true);
+}
+
 export async function transferCaptaincy(teamId: string, newCaptainId: string): Promise<SharedTeam> {
   // Reasignar capitán anterior a MEMBER
   await prisma.participant.updateMany({

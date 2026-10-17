@@ -44,7 +44,9 @@ import {
   Volume2,
   VolumeX,
   Pause,
-  Tv
+  Tv,
+  Minus,
+  Target
 } from 'lucide-react';
 import type {
   Participant,
@@ -116,6 +118,7 @@ export function AdminPage() {
   // Estados de Trivia y Buzzer (Fase 2)
   const [questions, setQuestions] = useState<Question[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [manualPoints, setManualPoints] = useState<Record<string, string>>({});
   const [gameState, setGameState] = useState<GameState>({
     status: 'LOBBY',
     currentQuestion: null,
@@ -658,6 +661,14 @@ export function AdminPage() {
     socket.emit('admin:adjust-team-points', { teamId, deltaPoints, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert(res?.error || 'Error al ajustar puntos');
+      }
+    });
+  };
+
+  const handleSetExactScore = (teamId: string, score: number) => {
+    socket.emit('admin:set-team-score', { teamId, score, token: getAdminToken() || undefined }, (res) => {
+      if (!res?.success) {
+        alert(res?.error || 'Error al fijar puntaje');
       }
     });
   };
@@ -1246,7 +1257,7 @@ export function AdminPage() {
                     Equipos & PINs ({teams.length})
                   </h2>
                   <p className="adm-section-sub">
-                    Códigos PIN de acceso de 4 dígitos y modificadores rápidos de puntaje (+/-).
+                    Códigos PIN de acceso de 4 dígitos, modificadores rápidos y ajuste manual de puntos (+, -, o fijar puntaje).
                   </p>
                 </div>
               </div>
@@ -1329,6 +1340,104 @@ export function AdminPage() {
                         >
                           +100
                         </button>
+                      </div>
+
+                      {/* Control Manual de Puntos (+, -, o Asignar Exacto) */}
+                      <div className="adm-manual-pts-box">
+                        <div className="adm-manual-pts-header">
+                          <span className="adm-manual-pts-title">Ajuste Manual Personalizado</span>
+                          {manualPoints[t.id] && (
+                            <button
+                              type="button"
+                              onClick={() => setManualPoints((prev) => ({ ...prev, [t.id]: '' }))}
+                              className="adm-manual-pts-clear"
+                              title="Limpiar campo"
+                            >
+                              ✕ Limpiar
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="adm-manual-pts-input-row">
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Pts (ej: 25, 150...)"
+                            value={manualPoints[t.id] ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setManualPoints((prev) => ({ ...prev, [t.id]: val }));
+                            }}
+                            className="adm-manual-pts-input"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const pts = parseInt(manualPoints[t.id] || '', 10);
+                                if (!isNaN(pts) && pts > 0) {
+                                  handleAdjustPoints(t.id, pts);
+                                  setManualPoints((prev) => ({ ...prev, [t.id]: '' }));
+                                }
+                              }
+                            }}
+                          />
+                        </div>
+
+                        <div className="adm-manual-pts-actions">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pts = parseInt(manualPoints[t.id] || '', 10);
+                              if (isNaN(pts) || pts <= 0) {
+                                alert('Ingresa una cantidad mayor a 0 para quitar');
+                                return;
+                              }
+                              handleAdjustPoints(t.id, -pts);
+                              setManualPoints((prev) => ({ ...prev, [t.id]: '' }));
+                            }}
+                            title={`Quitar ${manualPoints[t.id] || 'X'} puntos`}
+                            className="adm-manual-btn minus"
+                          >
+                            <Minus size={11} />
+                            <span>Quitar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pts = parseInt(manualPoints[t.id] || '', 10);
+                              if (isNaN(pts) || pts <= 0) {
+                                alert('Ingresa una cantidad mayor a 0 para adicionar');
+                                return;
+                              }
+                              handleAdjustPoints(t.id, pts);
+                              setManualPoints((prev) => ({ ...prev, [t.id]: '' }));
+                            }}
+                            title={`Adicionar ${manualPoints[t.id] || 'X'} puntos`}
+                            className="adm-manual-btn plus"
+                          >
+                            <Plus size={11} />
+                            <span>Adicionar</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pts = parseInt(manualPoints[t.id] || '', 10);
+                              if (isNaN(pts) || pts < 0) {
+                                alert('Ingresa un número (0 o mayor) para fijar el puntaje total');
+                                return;
+                              }
+                              if (confirm(`¿Asignar un puntaje total fijo de ${pts} pts a "${t.name}"?`)) {
+                                handleSetExactScore(t.id, pts);
+                                setManualPoints((prev) => ({ ...prev, [t.id]: '' }));
+                              }
+                            }}
+                            title={`Fijar puntaje total exactamente a ${manualPoints[t.id] || 'X'} puntos`}
+                            className="adm-manual-btn set"
+                          >
+                            <Target size={11} />
+                            <span>Asignar</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}

@@ -371,6 +371,10 @@ export interface ClientToServerEvents {
     data: { teamId: string; deltaPoints: number; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
+  'admin:set-team-score': (
+    data: { teamId: string; score: number; token?: string },
+    callback?: (response: { success: boolean; error?: string }) => void
+  ) => void;
   'admin:rebound-question': (
     data?: { seconds?: number; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
