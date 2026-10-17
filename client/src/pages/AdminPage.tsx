@@ -50,7 +50,8 @@ import type {
   GameState,
   QuestionType,
   ChatMessageItem,
-  Team
+  Team,
+  WallModerationItem
 } from '../../../shared/types/index.js';
 import '../styles/admin.css';
 
@@ -87,6 +88,12 @@ export function AdminPage() {
   const [moderationQueue, setModerationQueue] = useState<ChatMessageItem[]>([]);
   const [isStartingPairings, setIsStartingPairings] = useState(false);
   const [chatEnabled, setChatEnabled] = useState(false);
+
+  // Muro de mensajes en vivo del Stage (con filtro de lenguaje ofensivo)
+  const [wallEnabled, setWallEnabled] = useState(true);
+  const [wallItems, setWallItems] = useState<WallModerationItem[]>([]);
+  const [wallWordsInput, setWallWordsInput] = useState('');
+  const [wallWordsSaved, setWallWordsSaved] = useState(false);
 
   // Estados de Trivia y Buzzer (Fase 2)
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -155,6 +162,15 @@ export function AdminPage() {
     // Cargar cola de moderación de fotografías (Fase 3)
     socket.emit('admin:get-moderation-queue', (res) => {
       if (res?.success && res.queue) setModerationQueue(res.queue);
+    });
+
+    // Cargar muro de mensajes en vivo (Stage)
+    socket.emit('admin:get-wall', { token: getAdminToken() || undefined }, (res) => {
+      if (res?.success) {
+        setWallEnabled(res.enabled);
+        setWallItems(res.messages);
+        setWallWordsInput(res.words.join(', '));
+      }
     });
 
     // Cargar estado inicial del juego
@@ -242,6 +258,11 @@ export function AdminPage() {
       setChatEnabled(data.chatEnabled);
     }
 
+    function onWallUpdate(data: { enabled: boolean; messages: WallModerationItem[] }) {
+      setWallEnabled(data.enabled);
+      setWallItems(data.messages);
+    }
+
     socket.on('admin:participants-update', onParticipantsUpdate);
     socket.on('teams:update', onTeamsUpdate);
     socket.on('admin:participant-joined', onParticipantJoined);
@@ -253,6 +274,7 @@ export function AdminPage() {
     socket.on('admin:photo-submitted', onPhotoSubmitted);
     socket.on('admin:moderation-queue-update', onModerationQueueUpdate);
     socket.on('chat:status-change', onChatStatusChange);
+    socket.on('admin:wall-update', onWallUpdate);
 
     return () => {
       socket.off('connect', onSocketConnect);
@@ -267,6 +289,7 @@ export function AdminPage() {
       socket.off('admin:photo-submitted', onPhotoSubmitted);
       socket.off('admin:moderation-queue-update', onModerationQueueUpdate);
       socket.off('chat:status-change', onChatStatusChange);
+      socket.off('admin:wall-update', onWallUpdate);
     };
   }, [isAuthenticated]);
 
@@ -478,6 +501,39 @@ export function AdminPage() {
     socket.emit('admin:moderate-photo', { messageId, approved, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert('Error al moderar la fotografía');
+      }
+    });
+  };
+
+  // Muro de mensajes en vivo
+  const handleWallToggle = () => {
+    socket.emit('admin:wall-toggle', { enabled: !wallEnabled, token: getAdminToken() || undefined }, (res) => {
+      if (res?.success) setWallEnabled(res.enabled);
+    });
+  };
+
+  const handleWallHide = (messageId: string, hidden: boolean) => {
+    socket.emit('admin:wall-hide', { messageId, hidden, token: getAdminToken() || undefined }, (res) => {
+      if (!res?.success) alert('No se pudo actualizar el mensaje');
+    });
+  };
+
+  const handleWallApprove = (messageId: string, approved: boolean) => {
+    socket.emit('admin:wall-approve', { messageId, approved, token: getAdminToken() || undefined }, (res) => {
+      if (!res?.success) alert('No se pudo actualizar el mensaje');
+    });
+  };
+
+  const handleWallSaveWords = () => {
+    const words = wallWordsInput
+      .split(/[,\n]/)
+      .map((w) => w.trim())
+      .filter(Boolean);
+    socket.emit('admin:wall-set-words', { words, token: getAdminToken() || undefined }, (res) => {
+      if (res?.success) {
+        setWallWordsInput(res.words.join(', '));
+        setWallWordsSaved(true);
+        setTimeout(() => setWallWordsSaved(false), 2500);
       }
     });
   };
@@ -1159,6 +1215,125 @@ export function AdminPage() {
                   {chatEnabled ? 'Pausar Chat' : 'Habilitar Chat'}
                 </button>
               </div>
+            </div>
+
+            {/* Muro de mensajes en vivo (carriles laterales del carrusel en /stage) */}
+            <div className="adm-panel-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="adm-section-header" style={{ marginBottom: 0 }}>
+                <div>
+                  <h2 className="adm-section-title">
+                    <MessageSquare size={18} color="var(--primary)" />
+                    Muro en vivo del Stage
+                  </h2>
+                  <p className="adm-section-sub">
+                    Los mensajes de los jóvenes se proyectan a los costados del carrusel. El filtro automático retiene
+                    el lenguaje ofensivo; tú puedes ocultar cualquier mensaje al instante.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <div className="adm-stat-badge">
+                    En pantalla: <strong>{wallItems.filter((m) => m.onWall).length}</strong>
+                  </div>
+                  <div className="adm-stat-badge">
+                    Retenidos: <strong>{wallItems.filter((m) => m.flagged && !m.approved).length}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleWallToggle}
+                    className={wallEnabled ? 'adm-btn-danger-outline' : 'adm-btn-primary'}
+                    title="Apaga o enciende todo el muro de mensajes en el proyector"
+                  >
+                    {wallEnabled ? 'Apagar Muro' : 'Encender Muro'}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  className="adm-input"
+                  style={{ flex: 1, minWidth: '220px' }}
+                  value={wallWordsInput}
+                  onChange={(e) => setWallWordsInput(e.target.value)}
+                  placeholder="Palabras extra a bloquear, separadas por coma (ej. tonto, feo)"
+                />
+                <button type="button" onClick={handleWallSaveWords} className="adm-btn-subtle">
+                  <ShieldAlert size={14} />
+                  <span>{wallWordsSaved ? 'Guardado ✓' : 'Guardar lista'}</span>
+                </button>
+              </div>
+
+              {wallItems.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '28px', color: 'var(--text-dim)', fontSize: '14px' }}>
+                  Aún no hay mensajes. Aparecerán aquí en cuanto las duplas empiecen a chatear.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '380px', overflowY: 'auto' }}>
+                  {wallItems.map((m) => {
+                    const status = m.hidden
+                      ? { label: 'Oculto', color: '#9aa0a6' }
+                      : m.flagged && !m.approved
+                      ? { label: 'Retenido por filtro', color: '#ff5a1f' }
+                      : m.flagged && m.approved
+                      ? { label: 'Permitido por ti', color: '#35c27d' }
+                      : { label: 'En pantalla', color: '#35c27d' };
+                    return (
+                      <div
+                        key={m.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          padding: '10px 12px',
+                          border: '1px solid var(--border-subtle)',
+                          borderLeft: `3px solid ${status.color}`,
+                          borderRadius: '4px',
+                          background: m.onWall ? 'rgba(53, 194, 125, 0.05)' : 'rgba(255,255,255,0.02)'
+                        }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '2px' }}>
+                            <strong style={{ color: '#fff' }}>{m.senderName}</strong> · {m.senderTeamName} ·{' '}
+                            {new Date(m.sentAt).toLocaleTimeString()} ·{' '}
+                            <span style={{ color: status.color, fontWeight: 700 }}>{status.label}</span>
+                          </div>
+                          <div style={{ fontSize: '14px', overflowWrap: 'anywhere' }}>{m.content}</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                          {m.flagged && !m.approved && !m.hidden && (
+                            <button
+                              type="button"
+                              onClick={() => handleWallApprove(m.id, true)}
+                              className="adm-btn-subtle"
+                              title="Mostrar este mensaje aunque el filtro lo haya retenido"
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Permitir</span>
+                            </button>
+                          )}
+                          {m.hidden ? (
+                            <button type="button" onClick={() => handleWallHide(m.id, false)} className="adm-btn-subtle">
+                              <span>Restaurar</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleWallHide(m.id, true)}
+                              className="adm-btn-danger-outline"
+                              title="Retirar este mensaje del muro ahora mismo"
+                            >
+                              <XCircle size={14} />
+                              <span>Ocultar</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div>

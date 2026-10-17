@@ -5,7 +5,7 @@ import { fetchStageData } from '../services/api';
 import { TeamAvatar } from '../components/TeamAvatar';
 import { CircularCarousel } from '../components/CircularCarousel';
 import confetti from 'canvas-confetti';
-import type { StageData, Team, GameState, GameStatus, MuralPhotoItem } from '../../../shared/types/index.js';
+import type { StageData, Team, GameState, GameStatus, MuralPhotoItem, WallMessage } from '../../../shared/types/index.js';
 import { Maximize, Minimize, Trophy, Camera, Radio, QrCode } from 'lucide-react';
 import '../styles/stage.css';
 
@@ -49,6 +49,10 @@ export function StagePage() {
   const [stageViewMode, setStageViewMode] = useState<'auto' | 'lobby' | 'leaderboard' | 'mural'>('auto');
   const [muralPhotos, setMuralPhotos] = useState<MuralPhotoItem[]>([]);
 
+  // Muro de mensajes de los jóvenes (ya filtrados por el servidor)
+  const [wallMessages, setWallMessages] = useState<WallMessage[]>([]);
+  const [wallEnabled, setWallEnabled] = useState(true);
+
   // Controles del operador: se ocultan solos para no ensuciar la proyección
   const [controlsVisible, setControlsVisible] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -70,6 +74,12 @@ export function StagePage() {
           setStageData(res.data);
           if (res.data.muralPhotos) setMuralPhotos(res.data.muralPhotos);
           if (res.gameState) setGameState(res.gameState);
+        }
+      });
+      socket.emit('stage:get-wall', (res) => {
+        if (res?.success) {
+          setWallEnabled(res.enabled);
+          setWallMessages(res.messages);
         }
       });
     }
@@ -115,6 +125,11 @@ export function StagePage() {
       setMuralPhotos(photos);
     });
 
+    socket.on('stage:wall-update', (wall) => {
+      setWallEnabled(wall.enabled);
+      setWallMessages(wall.messages);
+    });
+
     return () => {
       socket.off('connect', registerStage);
       socket.off('disconnect');
@@ -124,6 +139,7 @@ export function StagePage() {
       socket.off('game:countdown-tick');
       socket.off('game:score-updated');
       socket.off('stage:mural-update');
+      socket.off('stage:wall-update');
     };
   }, []);
 
@@ -281,7 +297,7 @@ export function StagePage() {
       {/* ================================================================ CONTENIDO */}
       <main className="st-main" key={isMural ? 'mural' : showLobby ? 'lobby' : status}>
         {/* ----------------------------------------------------------- MURAL */}
-        {isMural && <MuralView photos={muralPhotos} />}
+        {isMural && <MuralView photos={muralPhotos} wall={wallEnabled ? wallMessages : []} />}
 
         {/* ----------------------------------------------------------- LOBBY */}
         {!isMural && showLobby && (
@@ -617,9 +633,151 @@ function QuestionView({ gameState }: { gameState: GameState }) {
 }
 
 /* ==========================================================================
-   Mural de integración: anillo 3D a pantalla completa, sin marcos
+   Muro de mensajes: dos carriles laterales con tarjetas que entran y salen
+   solas, sin tapar el carrusel. Cada WALL_INTERVAL_MS aparece un mensaje nuevo
+   (los recién enviados tienen prioridad) y el más antiguo del carril se retira.
    ========================================================================== */
-function MuralView({ photos }: { photos: MuralPhotoItem[] }) {
+const WALL_INTERVAL_MS = 4800;
+const WALL_MAX_PER_LANE = 3;
+const WALL_EXIT_MS = 700;
+
+interface WallCard {
+  key: string;
+  msg: WallMessage;
+  leaving: boolean;
+}
+
+function useWallFeed(messages: WallMessage[]) {
+  const [left, setLeft] = useState<WallCard[]>([]);
+  const [right, setRight] = useState<WallCard[]>([]);
+
+  const leftRef = useRef(left);
+  const rightRef = useRef(right);
+  leftRef.current = left;
+  rightRef.current = right;
+
+  const messagesRef = useRef<WallMessage[]>(messages);
+  const seenRef = useRef<Set<string>>(new Set());
+  const queueRef = useRef<WallMessage[]>([]);
+  const initializedRef = useRef(false);
+  const cursorRef = useRef(0);
+  const turnRef = useRef(0);
+  const counterRef = useRef(0);
+
+  // Detectar mensajes nuevos y retirar de pantalla los que el admin oculte
+  useEffect(() => {
+    messagesRef.current = messages;
+    const ids = new Set(messages.map((m) => m.id));
+
+    if (!initializedRef.current && messages.length > 0) {
+      initializedRef.current = true;
+      messages.forEach((m) => seenRef.current.add(m.id));
+      queueRef.current = messages.slice(-4); // al abrir la vista, arrancamos con lo más reciente
+    } else {
+      messages.forEach((m) => {
+        if (!seenRef.current.has(m.id)) {
+          seenRef.current.add(m.id);
+          queueRef.current.push(m);
+        }
+      });
+    }
+    queueRef.current = queueRef.current.filter((m) => ids.has(m.id));
+
+    const keep = (prev: WallCard[]) => (prev.some((c) => !ids.has(c.msg.id)) ? prev.filter((c) => ids.has(c.msg.id)) : prev);
+    setLeft(keep);
+    setRight(keep);
+  }, [messages]);
+
+  // Ritmo de aparición
+  useEffect(() => {
+    const push = (setter: React.Dispatch<React.SetStateAction<WallCard[]>>, msg: WallMessage) => {
+      const card: WallCard = { key: `${msg.id}-${counterRef.current++}`, msg, leaving: false };
+      setter((prev) => {
+        const next = [...prev, card];
+        const active = next.filter((c) => !c.leaving);
+        if (active.length > WALL_MAX_PER_LANE) {
+          const oldest = active[0];
+          return next.map((c) => (c === oldest ? { ...c, leaving: true } : c));
+        }
+        return next;
+      });
+    };
+
+    const tick = () => {
+      const visible = new Set(
+        [...leftRef.current, ...rightRef.current].filter((c) => !c.leaving).map((c) => c.msg.id)
+      );
+
+      let msg: WallMessage | undefined;
+      while (queueRef.current.length > 0) {
+        const candidate = queueRef.current.shift()!;
+        if (!visible.has(candidate.id)) {
+          msg = candidate;
+          break;
+        }
+      }
+
+      if (!msg) {
+        const all = messagesRef.current;
+        for (let i = 0; i < all.length; i++) {
+          const candidate = all[cursorRef.current % all.length];
+          cursorRef.current += 1;
+          if (!visible.has(candidate.id)) {
+            msg = candidate;
+            break;
+          }
+        }
+      }
+      if (!msg) return;
+
+      const side = turnRef.current++ % 2 === 0 ? setLeft : setRight;
+      push(side, msg);
+    };
+
+    const first = setTimeout(tick, 600);
+    const id = setInterval(tick, WALL_INTERVAL_MS);
+    return () => {
+      clearTimeout(first);
+      clearInterval(id);
+    };
+  }, []);
+
+  // Eliminar del DOM las tarjetas que ya terminaron su animación de salida
+  useEffect(() => {
+    if (!left.some((c) => c.leaving)) return;
+    const t = setTimeout(() => setLeft((p) => p.filter((c) => !c.leaving)), WALL_EXIT_MS + 60);
+    return () => clearTimeout(t);
+  }, [left]);
+
+  useEffect(() => {
+    if (!right.some((c) => c.leaving)) return;
+    const t = setTimeout(() => setRight((p) => p.filter((c) => !c.leaving)), WALL_EXIT_MS + 60);
+    return () => clearTimeout(t);
+  }, [right]);
+
+  return { left, right };
+}
+
+function WallLane({ cards, side }: { cards: WallCard[]; side: 'left' | 'right' }) {
+  return (
+    <div className={`st-wall-lane is-${side}`} aria-hidden="true">
+      {cards.map((card) => (
+        <figure key={card.key} className={`st-wall-card ${card.leaving ? 'is-leaving' : ''}`}>
+          <blockquote>{card.msg.content}</blockquote>
+          <figcaption>
+            <strong>{card.msg.senderName}</strong>
+            <span>{card.msg.senderTeamName}</span>
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
+/* ==========================================================================
+   Mural de integración: anillo 3D en el centro y mensajes en vivo a los costados
+   ========================================================================== */
+function MuralView({ photos, wall }: { photos: MuralPhotoItem[]; wall: WallMessage[] }) {
   const items = useMemo(() => {
     if (photos.length === 0) return [];
     const base = photos.map((p) => ({
@@ -634,20 +792,7 @@ function MuralView({ photos }: { photos: MuralPhotoItem[] }) {
     return filled.slice(0, Math.max(8, base.length));
   }, [photos]);
 
-  if (photos.length === 0) {
-    return (
-      <div className="st-mural">
-        <div className="st-empty">
-          <span className="st-kicker">Mural de integración</span>
-          <h3>Todavía no hay fotografías aprobadas</h3>
-          <p>
-            Cada dupla puede tomarse una foto desde el chat de su teléfono. Las imágenes aprobadas por los
-            coordinadores se proyectarán aquí.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const { left, right } = useWallFeed(wall);
 
   return (
     <div className="st-mural">
@@ -655,26 +800,43 @@ function MuralView({ photos }: { photos: MuralPhotoItem[] }) {
         <h2 className="st-section-title">Mural de integración</h2>
         <span className="st-section-meta">{photos.length} fotografías aprobadas</span>
       </div>
-      <div className="st-mural-stage">
-        <CircularCarousel
-          items={items}
-          preset="cylinder"
-          intro="rise"
-          cardWidth={320}
-          aspectRatio={0.8}
-          gap={28}
-          tilt={-4}
-          speed={10}
-          captions
-          draggable
-          pauseOnHover={false}
-          parallax={0.12}
-          stretch={0.3}
-          depthFade={0.72}
-          fadeColor="#0b0c0e"
-          innerShade={0.75}
-          cornerRadius={4}
-        />
+      <div className="st-mural-body">
+        <WallLane cards={left} side="left" />
+
+        <div className="st-mural-stage">
+          {photos.length === 0 ? (
+            <div className="st-empty">
+              <span className="st-kicker">Mural de integración</span>
+              <h3>Todavía no hay fotografías aprobadas</h3>
+              <p>
+                Cada dupla puede tomarse una foto desde el chat de su teléfono. Las imágenes aprobadas por los
+                coordinadores se proyectarán aquí.
+              </p>
+            </div>
+          ) : (
+            <CircularCarousel
+              items={items}
+              preset="cylinder"
+              intro="rise"
+              cardWidth={300}
+              aspectRatio={0.8}
+              gap={28}
+              tilt={-4}
+              speed={10}
+              captions
+              draggable
+              pauseOnHover={false}
+              parallax={0.12}
+              stretch={0.3}
+              depthFade={0.72}
+              fadeColor="#0b0c0e"
+              innerShade={0.75}
+              cornerRadius={4}
+            />
+          )}
+        </div>
+
+        <WallLane cards={right} side="right" />
       </div>
     </div>
   );

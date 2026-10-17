@@ -51,6 +51,16 @@ import {
   isChatEnabled,
   setChatEnabled
 } from '../services/pairingService.js';
+import {
+  getWallMessages,
+  getWallModeration,
+  isWallEnabled,
+  setWallEnabled,
+  setMessageHidden,
+  setMessageApproved,
+  getCustomWords,
+  setCustomWords
+} from '../services/wallService.js';
 
 interface SocketData {
   isAdmin?: boolean;
@@ -84,6 +94,21 @@ function checkIsAdmin(socket: Socket<any, any, any, SocketData>, tokenOrData?: a
 export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>) {
   // Inicializar servidor de socket en el motor de juego
   gameEngine.setSocketServer(io);
+
+  // Muro de mensajes en vivo: envía la versión filtrada al Stage y la versión completa al Admin
+  const broadcastWall = async () => {
+    try {
+      const [stageMessages, adminMessages] = await Promise.all([getWallMessages(), getWallModeration()]);
+      io.to('room:stage').emit('stage:wall-update', { enabled: isWallEnabled(), messages: stageMessages });
+      io.to('room:admin').emit('admin:wall-update', {
+        enabled: isWallEnabled(),
+        messages: adminMessages,
+        words: getCustomWords()
+      });
+    } catch (err) {
+      console.error('[wall] Error al difundir el muro:', err);
+    }
+  };
 
   // Middleware de autenticación de admin en conexión handshake
   io.use((socket, next) => {
@@ -597,6 +622,11 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
           }
         } catch (e) {}
 
+        // Actualizar el muro en vivo del Stage (el texto pasa por el filtro de lenguaje)
+        if (data.content && data.content.trim()) {
+          void broadcastWall();
+        }
+
         // Si tiene foto, enviar a la bandeja de moderación del admin
         if (data.photoUrl) {
           io.to('room:admin').emit('admin:photo-submitted', message);
@@ -620,6 +650,60 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       } catch (err: any) {
         callback?.({ success: false, photos: [] });
       }
+    });
+
+    // ----------------------------------------------------
+    // Muro de mensajes en vivo (Stage) + moderación del Admin
+    // ----------------------------------------------------
+    socket.on('stage:get-wall', async (callback) => {
+      try {
+        const messages = await getWallMessages();
+        callback?.({ success: true, enabled: isWallEnabled(), messages });
+      } catch (err: any) {
+        callback?.({ success: false, enabled: isWallEnabled(), messages: [] });
+      }
+    });
+
+    socket.on('admin:get-wall', async (...args: any[]) => {
+      const callback = typeof args[0] === 'function' ? args[0] : args[1];
+      const data = typeof args[0] === 'object' ? args[0] : undefined;
+      if (!checkIsAdmin(socket, data)) {
+        return callback?.({ success: false, enabled: isWallEnabled(), messages: [], words: [] });
+      }
+      try {
+        const messages = await getWallModeration();
+        callback?.({ success: true, enabled: isWallEnabled(), messages, words: getCustomWords() });
+      } catch (err: any) {
+        callback?.({ success: false, enabled: isWallEnabled(), messages: [], words: [] });
+      }
+    });
+
+    socket.on('admin:wall-hide', async (data, callback) => {
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false });
+      setMessageHidden(data.messageId, data.hidden);
+      await broadcastWall();
+      callback?.({ success: true });
+    });
+
+    socket.on('admin:wall-approve', async (data, callback) => {
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false });
+      setMessageApproved(data.messageId, data.approved);
+      await broadcastWall();
+      callback?.({ success: true });
+    });
+
+    socket.on('admin:wall-toggle', async (data, callback) => {
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, enabled: isWallEnabled() });
+      const enabled = setWallEnabled(!!data.enabled);
+      await broadcastWall();
+      callback?.({ success: true, enabled });
+    });
+
+    socket.on('admin:wall-set-words', async (data, callback) => {
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, words: getCustomWords() });
+      const words = setCustomWords(Array.isArray(data.words) ? data.words : []);
+      await broadcastWall();
+      callback?.({ success: true, words });
     });
 
     // ----------------------------------------------------

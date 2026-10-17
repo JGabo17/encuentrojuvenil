@@ -150,6 +150,33 @@ export interface PairingData {
   messages: ChatMessageItem[];
 }
 
+/** Mensaje de un joven mostrado en el muro en vivo del Stage */
+export interface WallMessage {
+  id: string;
+  content: string;
+  senderName: string;
+  senderTeamName: string;
+  sentAt: string;
+}
+
+/** Vista del admin: incluye el estado de moderación de cada mensaje */
+export interface WallModerationItem extends WallMessage {
+  flagged: boolean;
+  hidden: boolean;
+  approved: boolean;
+  onWall: boolean;
+}
+
+export interface WallState {
+  enabled: boolean;
+  messages: WallMessage[];
+}
+
+export interface AdminWallState {
+  enabled: boolean;
+  messages: WallModerationItem[];
+  words: string[];
+}
 export interface MuralPhotoItem {
   id: string;
   photoUrl: string;
@@ -291,6 +318,29 @@ export interface ClientToServerEvents {
     data: { pairingId: string; content: string; photoUrl?: string },
     callback?: (response: { success: boolean; message?: ChatMessageItem; error?: string }) => void
   ) => void;
+  'stage:get-wall': (
+    callback?: (response: { success: boolean; enabled: boolean; messages: WallMessage[] }) => void
+  ) => void;
+  'admin:get-wall': (
+    data?: { token?: string } | ((response: { success: boolean } & AdminWallState) => void),
+    callback?: (response: { success: boolean } & AdminWallState) => void
+  ) => void;
+  'admin:wall-hide': (
+    data: { messageId: string; hidden: boolean; token?: string },
+    callback?: (response: { success: boolean }) => void
+  ) => void;
+  'admin:wall-approve': (
+    data: { messageId: string; approved: boolean; token?: string },
+    callback?: (response: { success: boolean }) => void
+  ) => void;
+  'admin:wall-toggle': (
+    data: { enabled: boolean; token?: string },
+    callback?: (response: { success: boolean; enabled: boolean }) => void
+  ) => void;
+  'admin:wall-set-words': (
+    data: { words: string[]; token?: string },
+    callback?: (response: { success: boolean; words: string[] }) => void
+  ) => void;
   'stage:get-mural': (
     callback?: (response: { success: boolean; photos: MuralPhotoItem[] }) => void
   ) => void;
@@ -342,6 +392,8 @@ export interface ServerToClientEvents {
   'chat:new-message': (message: ChatMessageItem) => void;
   'chat:status-change': (data: { chatEnabled: boolean }) => void;
   'stage:mural-update': (photos: MuralPhotoItem[]) => void;
+  'stage:wall-update': (data: WallState) => void;
+  'admin:wall-update': (data: AdminWallState) => void;
   'admin:photo-submitted': (message: ChatMessageItem) => void;
   'admin:moderation-queue-update': (queue: ChatMessageItem[]) => void;
 

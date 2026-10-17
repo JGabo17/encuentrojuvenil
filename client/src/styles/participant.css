@@ -526,3 +526,35 @@
   align-items: center;
   gap: 8px;
 }
+
+
+/* ==========================================================================
+   Logo RVC de fondo (marca de agua) — las tarjetas son semitransparentes
+   para que el logo se perciba sin competir con el contenido.
+   ========================================================================== */
+.pt-container::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: url('/logo-rvc.png') center 56% / min(92vw, 480px) no-repeat;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+:where(.pt-container) > * {
+  position: relative;
+  z-index: 1;
+}
+
+.pt-header,
+.pt-card,
+.pt-team-card {
+  background: rgba(18, 20, 23, 0.8);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.pt-chat-box {
+  background: rgba(18, 20, 23, 0.86);
+}
