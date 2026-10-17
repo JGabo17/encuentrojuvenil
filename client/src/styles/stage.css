@@ -1178,3 +1178,61 @@
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
 }
+
+/* -------------------------------------------------------- Toast de audio bloqueado */
+.st-audio-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(19, 21, 27, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 90, 31, 0.5);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), 0 0 24px rgba(255, 90, 31, 0.25);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s;
+  animation: st-toast-appear 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.st-audio-toast:hover {
+  transform: translateX(-50%) scale(1.04);
+  background: rgba(255, 90, 31, 0.18);
+  border-color: var(--primary);
+}
+
+.st-audio-toast svg {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.st-pulse {
+  animation: st-pulse-anim 1.5s infinite;
+}
+
+@keyframes st-toast-appear {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes st-pulse-anim {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.7; }
+  100% { transform: scale(1); opacity: 1; }
+}
+

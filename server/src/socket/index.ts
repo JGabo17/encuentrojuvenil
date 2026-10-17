@@ -1002,14 +1002,21 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       try {
         await transferCaptaincy(data.teamId, data.newCaptainId);
 
-        // Notificar al participante promovido
-        io.to(`participant:${data.newCaptainId}`).emit('participant:role-updated', { role: 'CAPTAIN' });
-
-        // Actualizar socket data del nuevo capitán en memoria
-        const sockets = await io.in(`participant:${data.newCaptainId}`).fetchSockets();
-        for (const s of sockets) {
-          s.data.role = 'CAPTAIN';
+        // Actualizar roles en memoria de todos los sockets del equipo
+        const teamSockets = await io.in(`team:${data.teamId}`).fetchSockets();
+        for (const s of teamSockets) {
+          if (s.data.participantId === data.newCaptainId) {
+            s.data.role = 'CAPTAIN';
+          } else if (s.data.role === 'CAPTAIN') {
+            s.data.role = 'MEMBER';
+            if (s.data.participantId) {
+              io.to(`participant:${s.data.participantId}`).emit('participant:role-updated', { role: 'MEMBER' });
+            }
+          }
         }
+
+        // Notificar al nuevo capitán promovido
+        io.to(`participant:${data.newCaptainId}`).emit('participant:role-updated', { role: 'CAPTAIN' });
 
         const [participants, teamsPublic, teamsAdmin, stageData] = await Promise.all([
           getAllParticipants(),

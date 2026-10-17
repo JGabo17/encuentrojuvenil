@@ -371,13 +371,17 @@ class GameEngine {
 
   // 4. Calificación Oral por Moderador / Admin
   public async gradeOralDefense(grade: 'CORRECT' | 'PARTIAL' | 'INCORRECT') {
-    if (!this.state.buzzerWinner) {
-      throw new Error('No hay equipo que haya ganado el turno para calificar.');
+    if (this.state.status !== 'BUZZER_LOCKED' || !this.state.buzzerWinner) {
+      throw new Error('No hay una defensa oral activa para calificar.');
     }
 
     this.clearTimer();
 
     const { teamId, teamName } = this.state.buzzerWinner;
+    // Limpiar inmediatamente el turno y cambiar estado para prevenir calificaciones duplicadas
+    this.state.buzzerWinner = null;
+    this.state.status = 'SHOWING_RESULT';
+
     const basePoints = this.state.currentQuestion?.points || 100;
 
     let pointsAwarded = 0;
@@ -400,7 +404,6 @@ class GameEngine {
       correctOptionIndex: null
     };
 
-    this.state.status = 'SHOWING_RESULT';
     this.state.result = result;
 
     const updatedTeams = await getAllTeams();

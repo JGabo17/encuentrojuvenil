@@ -136,6 +136,14 @@ export function ParticipantPage() {
             setParticipant(res.participant);
             setCurrentTeam(res.participant.team);
             setIsRegistered(true);
+
+            // Re-sincronizar chat en duplas tras reconexión
+            socket.emit('participant:get-pairing', (pRes) => {
+              if (pRes?.success && pRes.pairing) {
+                setPairingData(pRes.pairing);
+                if (typeof pRes.chatEnabled === 'boolean') setChatEnabled(pRes.chatEnabled);
+              }
+            });
           } else {
             localStorage.removeItem('encuentro_session_token');
             localStorage.removeItem('encuentro_participant_name');
@@ -161,6 +169,15 @@ export function ParticipantPage() {
       if (currentTeam) {
         const updated = teams.find((t) => t.id === currentTeam.id);
         if (updated) setCurrentTeam((prev) => ({ ...prev, ...updated }));
+      }
+    }
+
+    function onRoleUpdated(data: { role: 'CAPTAIN' | 'MEMBER' }) {
+      setParticipant((prev) => (prev ? { ...prev, role: data.role } : prev));
+      if (data.role === 'CAPTAIN') {
+        try {
+          if ('vibrate' in navigator) navigator.vibrate([150, 80, 150]);
+        } catch (e) {}
       }
     }
 
@@ -257,6 +274,7 @@ export function ParticipantPage() {
     socket.on('stage:update', (data) => {
       if (data?.teams) onTeamsUpdate(data.teams);
     });
+    socket.on('participant:role-updated', onRoleUpdated);
     socket.on('game:state-update', onGameStateUpdate);
     socket.on('game:timer-tick', onTimerTick);
     socket.on('game:countdown-tick', onCountdownTick);
@@ -271,6 +289,7 @@ export function ParticipantPage() {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('stage:update');
+      socket.off('participant:role-updated', onRoleUpdated);
       socket.off('game:state-update', onGameStateUpdate);
       socket.off('game:timer-tick', onTimerTick);
       socket.off('game:countdown-tick', onCountdownTick);
