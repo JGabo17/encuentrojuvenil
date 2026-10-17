@@ -7,8 +7,13 @@ interface TeamAvatarProps {
   className?: string;
 }
 
+/**
+ * Escudo del equipo. Estilo plano: esquinas casi rectas, borde fino,
+ * sin sombras ni brillos. Si no hay imagen, muestra las iniciales sobre azul RVC.
+ */
 export function TeamAvatar({ avatar, teamName, size = 54, className }: TeamAvatarProps) {
   const isImage = avatar && (avatar.startsWith('data:image') || avatar.startsWith('http') || avatar.startsWith('/'));
+  const radius = Math.max(3, Math.round(size * 0.08));
 
   if (isImage) {
     return (
@@ -17,12 +22,11 @@ export function TeamAvatar({ avatar, teamName, size = 54, className }: TeamAvata
         style={{
           width: `${size}px`,
           height: `${size}px`,
-          borderRadius: `${Math.round(size * 0.32)}px`,
+          borderRadius: `${radius}px`,
           overflow: 'hidden',
-          border: '2px solid rgba(255, 101, 25, 0.5)',
-          boxShadow: '0 4px 14px rgba(255, 101, 25, 0.25)',
+          border: '1px solid rgba(255, 255, 255, 0.14)',
           flexShrink: 0,
-          background: '#0e1626'
+          background: '#16191d'
         }}
       >
         <img
@@ -49,19 +53,18 @@ export function TeamAvatar({ avatar, teamName, size = 54, className }: TeamAvata
       style={{
         width: `${size}px`,
         height: `${size}px`,
-        borderRadius: `${Math.round(size * 0.32)}px`,
-        background: 'linear-gradient(135deg, #ff6519 0%, #b43a05 100%)',
-        border: '2px solid rgba(255, 255, 255, 0.15)',
-        boxShadow: '0 4px 14px rgba(255, 101, 25, 0.25)',
+        borderRadius: `${radius}px`,
+        background: '#13233a',
+        border: '1px solid rgba(255, 255, 255, 0.14)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         color: '#ffffff',
-        fontWeight: 800,
-        fontSize: isEmoji ? `${Math.round(size * 0.48)}px` : `${Math.round(size * 0.38)}px`,
+        fontFamily: "'Barlow Condensed', 'Inter', sans-serif",
+        fontWeight: 700,
+        fontSize: isEmoji ? `${Math.round(size * 0.48)}px` : `${Math.round(size * 0.42)}px`,
         flexShrink: 0,
-        letterSpacing: '-0.02em',
-        textShadow: '0 2px 4px rgba(0,0,0,0.5)'
+        letterSpacing: '0.02em'
       }}
     >
       {isEmoji ? avatar : initials}

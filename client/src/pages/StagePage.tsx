@@ -1,28 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { socket } from '../services/socket';
 import { fetchStageData } from '../services/api';
 import { TeamAvatar } from '../components/TeamAvatar';
+import { CircularCarousel } from '../components/CircularCarousel';
 import confetti from 'canvas-confetti';
-import type { StageData, Team, GameState, MuralPhotoItem } from '../../../shared/types/index.js';
-import { CircularCarousel, type CarouselPreset } from '../components/CircularCarousel';
-import {
-  Users,
-  Shield,
-  Maximize,
-  Minimize,
-  Radio,
-  Clock,
-  Trophy,
-  CheckCircle2,
-  XCircle,
-  Award,
-  Camera,
-  Flame,
-  Globe,
-  Grid,
-  Sparkles
-} from 'lucide-react';
+import type { StageData, Team, GameState, GameStatus, MuralPhotoItem } from '../../../shared/types/index.js';
+import { Maximize, Minimize, Trophy, Camera } from 'lucide-react';
+import '../styles/stage.css';
+
+const PUBLIC_URL_FALLBACK = 'https://encuentro-juvenil.onrender.com';
+const COUNTDOWN_TOTAL = 7;
+const OPTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+/** Rótulo de la barra superior según la fase del juego */
+const PHASE_LABELS: Record<GameStatus, { tag: string; title: string }> = {
+  LOBBY: { tag: 'Sala de espera', title: 'Registro de equipos' },
+  QUESTION_READING: { tag: 'Trivia', title: 'Lectura de la pregunta' },
+  COUNTDOWN_ACTIVE: { tag: 'Trivia', title: 'Pulsador por activarse' },
+  QUESTION_ACTIVE: { tag: 'En juego', title: 'Pulsador habilitado' },
+  BUZZER_LOCKED: { tag: 'Turno', title: 'Turno de respuesta' },
+  EVALUATING: { tag: 'Jurado', title: 'Evaluación de la respuesta' },
+  SHOWING_RESULT: { tag: 'Resultado', title: 'Veredicto' },
+  LEADERBOARD: { tag: 'Clasificación', title: 'Tabla general de puntos' }
+};
 
 export function StagePage() {
   const [stageData, setStageData] = useState<StageData>({
@@ -42,17 +43,19 @@ export function StagePage() {
   const [joinUrl, setJoinUrl] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(socket.connected);
+  const [clock, setClock] = useState(() => new Date());
 
-  // Fase 3: Mural Social de Fotografías & 3D Carousel (React Bits)
+  // Mural social de fotografías
   const [stageViewMode, setStageViewMode] = useState<'game' | 'mural'>('game');
   const [muralPhotos, setMuralPhotos] = useState<MuralPhotoItem[]>([]);
-  const [carouselPreset, setCarouselPreset] = useState<CarouselPreset>('cylinder');
-  const [lobbyDisplayMode, setLobbyDisplayMode] = useState<'3d' | 'grid'>('3d');
+
+  // Controles del operador: se ocultan solos para no ensuciar la proyección
+  const [controlsVisible, setControlsVisible] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const url = isLocalhost ? 'https://participating-resorts-permitted-hurricane.trycloudflare.com' : window.location.origin;
-    setJoinUrl(url);
+    setJoinUrl(isLocalhost ? PUBLIC_URL_FALLBACK : window.location.origin);
 
     fetchStageData()
       .then((data) => {
@@ -83,14 +86,14 @@ export function StagePage() {
 
     socket.on('game:state-update', (state: GameState) => {
       setGameState(state);
-      // Disparar confeti si se muestra podio o respuesta correcta
       if (state.status === 'LEADERBOARD' || (state.status === 'SHOWING_RESULT' && state.result?.grade === 'CORRECT')) {
         try {
           confetti({
-            particleCount: 80,
-            spread: 90,
-            origin: { y: 0.4 },
-            colors: ['#ff6519', '#ff8a3d', '#ffffff', '#10b981']
+            particleCount: 70,
+            spread: 70,
+            startVelocity: 38,
+            origin: { y: 0.35 },
+            colors: ['#ff5a1f', '#ffffff', '#13233a']
           });
         } catch (e) {}
       }
@@ -114,6 +117,7 @@ export function StagePage() {
 
     return () => {
       socket.off('connect', registerStage);
+      socket.off('disconnect');
       socket.off('stage:update');
       socket.off('game:state-update');
       socket.off('game:timer-tick');
@@ -123,1309 +127,516 @@ export function StagePage() {
     };
   }, []);
 
+  // Reloj de la barra superior
+  useEffect(() => {
+    const id = setInterval(() => setClock(new Date()), 15000);
+    return () => clearInterval(id);
+  }, []);
 
+  // Si arranca una pregunta mientras se proyecta el mural, volvemos al juego automáticamente
+  useEffect(() => {
+    if (gameState.status !== 'LOBBY') setStageViewMode('game');
+  }, [gameState.status]);
+
+  // Mostrar controles al mover el mouse y ocultarlos a los 2.5 s
+  useEffect(() => {
+    const reveal = () => {
+      setControlsVisible(true);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      hideTimer.current = setTimeout(() => setControlsVisible(false), 2500);
+    };
+    window.addEventListener('mousemove', reveal);
+    return () => {
+      window.removeEventListener('mousemove', reveal);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
     } else {
       document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
     }
   };
 
-  // Ordenar equipos por puntaje para el podio
-  const rankedTeams = [...stageData.teams].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const rankedTeams = useMemo(
+    () => [...stageData.teams].sort((a, b) => (b.score || 0) - (a.score || 0)),
+    [stageData.teams]
+  );
+  const maxScore = Math.max(1, ...rankedTeams.map((t) => t.score || 0));
+
+  const isMural = stageViewMode === 'mural';
+  const status = gameState.status;
+  const question = gameState.currentQuestion;
+  const phase = isMural ? { tag: 'Mural', title: 'Mural de integración' } : PHASE_LABELS[status];
+  const isQuestionPhase =
+    !isMural &&
+    !!question &&
+    (status === 'QUESTION_READING' ||
+      status === 'COUNTDOWN_ACTIVE' ||
+      status === 'QUESTION_ACTIVE' ||
+      status === 'BUZZER_LOCKED' ||
+      status === 'EVALUATING' ||
+      status === 'SHOWING_RESULT');
+  const showTicker = rankedTeams.length > 0 && (isMural || status !== 'LOBBY');
+
+  const clockText = clock.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      backgroundColor: '#070a12',
-      color: '#f8fafc',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      padding: '24px 36px',
-      display: 'flex',
-      flexDirection: 'column',
-      boxSizing: 'border-box',
-      overflowX: 'hidden',
-      position: 'relative'
-    }}>
-      {/* Fondo Proyectado: Marca de Agua Gigante del Logo RVC con Opacidad Sutil */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundImage: 'radial-gradient(circle at center, transparent 30%, #070a12 90%), url(/logo-rvc.png)',
-          backgroundPosition: 'center center',
-          backgroundRepeat: 'no-repeat',
-          backgroundSize: 'min(75vh, 75vw)',
-          opacity: 0.13,
-          pointerEvents: 'none',
-          zIndex: 0,
-          filter: 'contrast(120%)'
-        }}
-      />
-
-      {/* Gradientes Ambientales Superpuestos */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          backgroundImage: `
-            radial-gradient(circle at 15% 15%, rgba(255, 101, 25, 0.18) 0%, transparent 45%),
-            radial-gradient(circle at 85% 85%, rgba(14, 25, 48, 0.7) 0%, transparent 50%),
-            radial-gradient(circle at 50% 50%, rgba(255, 120, 40, 0.05) 0%, transparent 60%)
-          `,
-          pointerEvents: 'none',
-          zIndex: 0
-        }}
-      />
-
-      {/* Barra Superior del Auditorio con Identidad RVC */}
-      <header style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingBottom: '20px',
-        borderBottom: '1px solid rgba(255, 101, 25, 0.2)',
-        marginBottom: '28px',
-        position: 'relative',
-        zIndex: 1
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-          {/* Emblema Oficial RVC con Glow y Logo */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '6px 20px 6px 8px',
-            borderRadius: '999px',
-            background: 'linear-gradient(135deg, rgba(255, 87, 34, 0.28) 0%, rgba(12, 20, 36, 0.9) 100%)',
-            border: '2px solid var(--primary)',
-            boxShadow: '0 0 25px rgba(255, 87, 34, 0.45), inset 0 0 15px rgba(255, 87, 34, 0.2)',
-          }}>
-            <img
-              src="/logo-rvc.png"
-              alt="Logo RVC"
-              style={{
-                width: '46px',
-                height: '46px',
-                objectFit: 'contain',
-                filter: 'drop-shadow(0 0 10px rgba(255, 87, 34, 0.85))'
-              }}
-            />
-            <span style={{
-              fontSize: '26px',
-              fontWeight: 900,
-              color: '#ffffff',
-              letterSpacing: '0.06em',
-              textShadow: '0 2px 12px rgba(255, 87, 34, 0.85)',
-              lineHeight: 1
-            }}>
-              RVC
-            </span>
-          </div>
-
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{
-                fontSize: '11px',
-                fontWeight: 900,
-                letterSpacing: '0.15em',
-                textTransform: 'uppercase',
-                color: '#ff8a3d',
-                background: 'rgba(255, 101, 25, 0.15)',
-                padding: '3px 10px',
-                borderRadius: '999px',
-                border: '1px solid rgba(255, 101, 25, 0.35)'
-              }}>
-                {gameState.status === 'LOBBY' ? 'SALA DE ESPERA' : 'COMPETENCIA EN VIVO'}
-              </span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '12px',
-                fontWeight: 700,
-                color: isConnected ? '#34d399' : '#f87171',
-                background: isConnected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                padding: '3px 10px',
-                borderRadius: '999px'
-              }}>
-                <Radio size={12} className={isConnected ? 'pulse-indicator' : ''} />
-                {isConnected ? 'EN VIVO' : 'CONECTANDO...'}
-              </span>
-            </div>
-
-            <h1 style={{
-              margin: '4px 0 0 0',
-              fontSize: '28px',
-              fontWeight: 900,
-              letterSpacing: '-0.02em',
-              background: 'linear-gradient(to right, #ffffff, #ffb885)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>
-              {gameState.status === 'LOBBY' && 'Encuentro Juvenil — Sala de Espera'}
-              {gameState.status === 'QUESTION_READING' && '📖 Ronda de Trivia — Lectura Previa'}
-              {gameState.status === 'COUNTDOWN_ACTIVE' && '⚡ Ronda de Trivia — ¡Atentos al Pulsador!'}
-              {gameState.status === 'QUESTION_ACTIVE' && 'Ronda de Trivia — ¡Pulsador Activo!'}
-              {gameState.status === 'BUZZER_LOCKED' && '¡Turno de Respuesta Concedido!'}
-              {gameState.status === 'EVALUATING' && 'Deliberación del Jurado / Calificación'}
-              {gameState.status === 'SHOWING_RESULT' && 'Resultado de la Pregunta'}
-              {gameState.status === 'LEADERBOARD' && '🏆 Tabla de Posiciones y Podio'}
-            </h1>
+    <div className="st">
+      {/* ================================================================ BARRA SUPERIOR */}
+      <header className="st-top">
+        <div className="st-brand">
+          <img src="/logo-rvc.png" alt="RVC" />
+          <div className="st-brand-text">
+            <span className="st-brand-name">Encuentro Juvenil</span>
+            <span className="st-brand-sub">RVC · Transmisión en vivo</span>
           </div>
         </div>
 
-        {/* Métricas Globales y Botón Pantalla Completa */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            background: 'rgba(14, 22, 38, 0.8)',
-            border: '1px solid rgba(255, 101, 25, 0.3)',
-            padding: '8px 18px',
-            borderRadius: '16px',
-            backdropFilter: 'blur(10px)'
-          }}>
-            <Shield size={22} color="#ff6519" />
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Equipos</div>
-              <div style={{ fontSize: '20px', fontWeight: 900, color: '#fff' }}>{stageData.teams.length}</div>
-            </div>
+        <div className="st-phase">
+          <span className="st-phase-tag">{phase.tag}</span>
+          <h1 className="st-phase-title">{phase.title}</h1>
+        </div>
+
+        <div className="st-stats">
+          <div className="st-stat">
+            <span className="st-stat-label">Equipos</span>
+            <span className="st-stat-value">{stageData.teams.length}</span>
           </div>
-
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            background: 'rgba(14, 22, 38, 0.8)',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            padding: '8px 18px',
-            borderRadius: '16px',
-            backdropFilter: 'blur(10px)'
-          }}>
-            <Users size={22} color="#10b981" />
-            <div style={{ textAlign: 'left' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Conectados</div>
-              <div style={{ fontSize: '20px', fontWeight: 900, color: '#34d399' }}>{stageData.connectedCount}</div>
-            </div>
+          <div className="st-stat">
+            <span className="st-stat-label">Conectados</span>
+            <span className="st-stat-value">{stageData.connectedCount}</span>
           </div>
-
-          <button
-            onClick={toggleFullscreen}
-            title="Pantalla Completa (F11)"
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#fff',
-              padding: '10px 16px',
-              borderRadius: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '13px',
-              fontWeight: 700,
-              transition: 'background 0.2s ease'
-            }}
-          >
-            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-            {isFullscreen ? 'Salir' : 'Maximizar'}
-          </button>
-
-          {/* Selector de Modo: Juego / Mural Social */}
-          <div style={{
-            display: 'flex',
-            gap: '4px',
-            background: 'rgba(255, 255, 255, 0.06)',
-            padding: '4px',
-            borderRadius: '14px',
-            border: '1px solid rgba(255, 255, 255, 0.12)'
-          }}>
-            <button
-              onClick={() => setStageViewMode('game')}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '10px',
-                border: 'none',
-                background: stageViewMode === 'game' ? 'var(--primary)' : 'transparent',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <Trophy size={15} />
-              Juego
-            </button>
-            <button
-              onClick={() => setStageViewMode('mural')}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '10px',
-                border: 'none',
-                background: stageViewMode === 'mural' ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'transparent',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <Camera size={15} />
-              Mural ({muralPhotos.length})
-            </button>
+          <div className="st-stat">
+            <span className="st-stat-label st-live">
+              <span className={`st-live-dot ${isConnected ? '' : 'is-off'}`} />
+              {isConnected ? 'En vivo' : 'Sin señal'}
+            </span>
+            <span className="st-stat-value">{clockText}</span>
           </div>
         </div>
       </header>
 
-      {/* ========================================================================= */}
-      {/* VISTA MURAL SOCIAL: PROYECCIÓN 3D ROTATIVA DE DUPLAS (React Bits 3D) */}
-      {/* ========================================================================= */}
-      {stageViewMode === 'mural' && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          zIndex: 1,
-          padding: '10px 0'
-        }}>
-          {/* Barra de Controles y Presets 3D */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            maxWidth: '1080px',
-            marginBottom: '14px',
-            flexWrap: 'wrap',
-            gap: '12px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, var(--primary) 0%, #ea580c 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 0 15px rgba(255, 87, 34, 0.4)'
-              }}>
-                <Sparkles size={20} color="#fff" />
+      {/* Controles del operador (aparecen al mover el mouse) */}
+      <div className={`st-controls ${controlsVisible ? 'is-visible' : ''}`}>
+        <button className={`st-ctrl ${!isMural ? 'is-active' : ''}`} onClick={() => setStageViewMode('game')}>
+          <Trophy size={14} /> Juego
+        </button>
+        <button className={`st-ctrl ${isMural ? 'is-active' : ''}`} onClick={() => setStageViewMode('mural')}>
+          <Camera size={14} /> Mural ({muralPhotos.length})
+        </button>
+        <button className="st-ctrl" onClick={toggleFullscreen} title="Pantalla completa">
+          {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
+          {isFullscreen ? 'Salir' : 'Pantalla completa'}
+        </button>
+      </div>
+
+      {/* ================================================================ CONTENIDO */}
+      <main className="st-main" key={isMural ? 'mural' : status}>
+        {/* ----------------------------------------------------------- MURAL */}
+        {isMural && <MuralView photos={muralPhotos} />}
+
+        {/* ----------------------------------------------------------- LOBBY */}
+        {!isMural && status === 'LOBBY' && (
+          <div className="st-lobby">
+            <aside className="st-join">
+              <span className="st-kicker">Únete desde tu teléfono</span>
+              <h2 className="st-join-title">Escanea para participar</h2>
+
+              <div className="st-qr">
+                <QRCodeSVG value={joinUrl || window.location.origin} size={280} level="H" includeMargin={false} />
               </div>
-              <div>
-                <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#fff', margin: 0 }}>
-                  Mural Social 3D — Duplas RVC
-                </h2>
-                <span style={{ fontSize: '12px', color: '#ffb885', fontWeight: 600 }}>
-                  {muralPhotos.length > 0
-                    ? `${muralPhotos.length} fotografía${muralPhotos.length > 1 ? 's' : ''} en rotación 3D en tiempo real`
-                    : 'Modo demostración · ¡Sube tu foto desde el chat móvil para verla girar en 3D!'}
+              <div className="st-url">{(joinUrl || window.location.origin).replace(/^https?:\/\//, '')}</div>
+
+              <div className="st-steps">
+                <div className="st-step">
+                  <span className="st-step-num">01</span>
+                  <p className="st-step-text">
+                    <strong>Capitanes:</strong> creen el equipo, suban su escudo y compartan el PIN.
+                  </p>
+                </div>
+                <div className="st-step">
+                  <span className="st-step-num">02</span>
+                  <p className="st-step-text">
+                    <strong>Integrantes:</strong> elijan su equipo e ingresen el PIN del capitán.
+                  </p>
+                </div>
+              </div>
+            </aside>
+
+            <section className="st-roster">
+              <div className="st-section-head">
+                <h2 className="st-section-title">Equipos inscritos</h2>
+                <span className="st-section-meta">
+                  {stageData.teams.length} equipos · {stageData.totalParticipants || 0} participantes
                 </span>
               </div>
-            </div>
 
-            {/* Selector de Presets de Giro 3D */}
-            <div style={{
-              display: 'flex',
-              gap: '4px',
-              background: 'rgba(255, 255, 255, 0.06)',
-              padding: '4px',
-              borderRadius: '12px',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              backdropFilter: 'blur(10px)'
-            }}>
-              {(['cylinder', 'orbit', 'wheel', 'panorama'] as CarouselPreset[]).map((presetKey) => (
-                <button
-                  key={presetKey}
-                  onClick={() => setCarouselPreset(presetKey)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: carouselPreset === presetKey ? 'var(--primary)' : 'transparent',
-                    color: '#fff',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: carouselPreset === presetKey ? '0 0 12px rgba(255, 87, 34, 0.5)' : 'none'
-                  }}
-                >
-                  {presetKey === 'cylinder' && 'Cilindro 3D'}
-                  {presetKey === 'orbit' && 'Órbita'}
-                  {presetKey === 'wheel' && 'Rueda'}
-                  {presetKey === 'panorama' && 'Panorama'}
-                </button>
+              {stageData.teams.length === 0 ? (
+                <div className="st-empty">
+                  <span className="st-kicker">Esperando inscripciones</span>
+                  <h3>Aún no hay equipos registrados</h3>
+                  <p>Los equipos aparecerán aquí en tiempo real en cuanto los capitanes completen su registro.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="st-table-head">
+                    <span>#</span>
+                    <span />
+                    <span>Equipo</span>
+                    <span style={{ textAlign: 'right' }}>Integrantes</span>
+                    <span style={{ textAlign: 'right' }}>Estado</span>
+                  </div>
+                  <div className="st-rows">
+                    {stageData.teams.map((team, idx) => (
+                      <div className="st-row" key={team.id} style={{ animationDelay: `${Math.min(idx, 12) * 40}ms` }}>
+                        <span className="st-row-idx">{String(idx + 1).padStart(2, '0')}</span>
+                        <TeamAvatar avatar={team.avatar} teamName={team.name} size={48} />
+                        <div className="st-row-name">
+                          <strong>{team.name}</strong>
+                          {team.motto && <span>{team.motto}</span>}
+                        </div>
+                        <span className="st-row-num">{team.memberCount || 0}</span>
+                        <span className="st-row-status">Listo</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* -------------------------------------------------------- PREGUNTA */}
+        {isQuestionPhase && question && <QuestionView gameState={gameState} />}
+
+        {/* ----------------------------------------------------- CLASIFICACIÓN */}
+        {!isMural && status === 'LEADERBOARD' && (
+          <div className="st-board">
+            {rankedTeams.length === 0 ? (
+              <div className="st-empty">
+                <h3>Sin equipos en competencia</h3>
+              </div>
+            ) : (
+              <>
+                <section className="st-leader">
+                  <span className="st-kicker">Primer lugar</span>
+                  <div className="st-leader-rank">01</div>
+                  <div style={{ marginTop: '24px' }}>
+                    <TeamAvatar avatar={rankedTeams[0].avatar} teamName={rankedTeams[0].name} size={96} />
+                  </div>
+                  <div className="st-leader-name">{rankedTeams[0].name}</div>
+                  {rankedTeams[0].motto && <div className="st-leader-motto">{rankedTeams[0].motto}</div>}
+                  <div className="st-leader-score">
+                    <strong>{rankedTeams[0].score || 0}</strong>
+                    <span>Puntos</span>
+                  </div>
+                </section>
+
+                <section className="st-roster st-standings">
+                  <div className="st-section-head">
+                    <h2 className="st-section-title">Clasificación</h2>
+                    <span className="st-section-meta">Marcador oficial</span>
+                  </div>
+                  <div className="st-table-head">
+                    <span>Pos</span>
+                    <span />
+                    <span>Equipo</span>
+                    <span style={{ textAlign: 'right' }}>Puntos</span>
+                  </div>
+                  <div className="st-rows">
+                    {rankedTeams.map((team, idx) => (
+                      <div
+                        className={`st-row ${idx < 3 ? 'is-top' : ''}`}
+                        key={team.id}
+                        style={{ animationDelay: `${Math.min(idx, 12) * 60}ms` }}
+                      >
+                        <span className={`st-rank ${idx < 3 ? 'is-top' : ''}`}>{String(idx + 1).padStart(2, '0')}</span>
+                        <TeamAvatar avatar={team.avatar} teamName={team.name} size={44} />
+                        <div className="st-row-name">
+                          <strong>{team.name}</strong>
+                          <div className="st-score-bar">
+                            <span style={{ width: `${((team.score || 0) / maxScore) * 100}%` }} />
+                          </div>
+                        </div>
+                        <span className="st-row-num">{team.score || 0}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* ================================================================ TICKER DE PUNTOS */}
+      {showTicker ? (
+        <footer className="st-ticker">
+          <span className="st-ticker-label">Marcador</span>
+          <div className="st-ticker-track">
+            <div
+              className="st-ticker-items"
+              style={{ ['--st-ticker-duration' as string]: `${Math.max(24, rankedTeams.length * 6)}s` }}
+            >
+              {[...rankedTeams, ...rankedTeams].map((team, idx) => (
+                <span className="st-ticker-item" key={`${team.id}-${idx}`}>
+                  <b>{String((idx % rankedTeams.length) + 1).padStart(2, '0')}</b>
+                  <span>{team.name}</span>
+                  <em>{team.score || 0}</em>
+                </span>
               ))}
             </div>
           </div>
+        </footer>
+      ) : (
+        <div />
+      )}
+    </div>
+  );
+}
 
-          {/* Carrusel Circular 3D Ultra-Pro */}
-          <div style={{
-            width: '100%',
-            maxWidth: '1100px',
-            height: '580px',
-            position: 'relative',
-            borderRadius: '24px',
-            background: 'radial-gradient(ellipse at center, rgba(14, 22, 38, 0.6) 0%, rgba(7, 11, 20, 0.95) 80%)',
-            border: '1px solid rgba(255, 87, 34, 0.25)',
-            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(255, 87, 34, 0.08)',
-            overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <CircularCarousel
-              items={
-                muralPhotos.length > 0
-                  ? muralPhotos.map((p) => ({
-                      src: p.photoUrl,
-                      alt: `Foto de ${p.senderName}`,
-                      title: `${p.senderName} (${p.senderTeamName})`,
-                      subtitle: p.caption || (p.partnerNames?.length ? `Dupla con ${p.partnerNames.join(', ')}` : 'Encuentro Juvenil RVC')
-                    }))
-                  : [
-                      {
-                        src: '/logo-rvc.png',
-                        title: 'Encuentro Juvenil RVC',
-                        subtitle: '¡Sube una selfie con tu dupla para proyectarla en 3D!'
-                      },
-                      {
-                        src: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=900&q=80',
-                        title: 'Juventud & Fe',
-                        subtitle: 'Comunidad Unida'
-                      },
-                      {
-                        src: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=80',
-                        title: 'Amistad y Servicio',
-                        subtitle: 'Creciendo en Duplas'
-                      },
-                      {
-                        src: 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=900&q=80',
-                        title: 'Celebración & Alegría',
-                        subtitle: 'Ronda de Integración'
-                      },
-                      {
-                        src: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=900&q=80',
-                        title: 'Energía & Pasión',
-                        subtitle: 'Arena RVC'
-                      }
-                    ]
-              }
-              preset={carouselPreset}
-              intro="rise"
-              cardWidth={280}
-              aspectRatio={1}
-              gap={30}
-              speed={13}
-              captions={true}
-              draggable={true}
-              stretch={0.4}
-              parallax={0.35}
-              depthFade={0.55}
-              fadeColor="#070b14"
+/* ==========================================================================
+   Vista de pregunta: lectura, cuenta regresiva, pulsador, turno y veredicto
+   ========================================================================== */
+function QuestionView({ gameState }: { gameState: GameState }) {
+  const question = gameState.currentQuestion!;
+  const status = gameState.status;
+  const isLong = question.text.length > 140;
+  const timeLimit = question.timeLimit || 1;
+  const timePct = Math.max(0, Math.min(100, (gameState.timeRemaining / timeLimit) * 100));
+  const isLowTime = status === 'QUESTION_ACTIVE' && gameState.timeRemaining <= 5;
+  const correctIdx = gameState.result?.correctOptionIndex ?? question.correctOptionIndex;
+  const countdown = gameState.countdownRemaining ?? COUNTDOWN_TOTAL;
+  const circumference = 2 * Math.PI * 48;
+
+  let timerLabel = 'Tiempo';
+  let timerValue: string = `${gameState.timeRemaining}s`;
+  if (status === 'QUESTION_READING') {
+    timerLabel = 'Estado';
+    timerValue = 'Lectura';
+  } else if (status === 'COUNTDOWN_ACTIVE') {
+    timerLabel = 'Pulsador en';
+    timerValue = `${countdown}s`;
+  } else if (status === 'BUZZER_LOCKED' || status === 'EVALUATING') {
+    timerLabel = 'Estado';
+    timerValue = status === 'EVALUATING' ? 'Evaluando' : 'Respondiendo';
+  } else if (status === 'SHOWING_RESULT') {
+    timerLabel = 'Estado';
+    timerValue = 'Finalizada';
+  }
+
+  return (
+    <div className="st-q">
+      <div>
+        <div className="st-q-meta">
+          <div>
+            <div className="st-q-meta-label">Pregunta</div>
+            <div className="st-q-meta-value is-accent">{String(question.order).padStart(2, '0')}</div>
+          </div>
+          <div>
+            <div className="st-q-meta-label">Modalidad</div>
+            <div className="st-q-meta-value">
+              {question.type === 'ORAL_DEFENSE' ? 'Defensa oral' : 'Opción múltiple'}
+            </div>
+          </div>
+          <div>
+            <div className="st-q-meta-label">Valor</div>
+            <div className="st-q-meta-value">{question.points} pts</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div className="st-q-meta-label">{timerLabel}</div>
+            <div className={`st-q-meta-value ${isLowTime ? 'is-danger' : ''}`}>{timerValue}</div>
+          </div>
+        </div>
+        {status === 'QUESTION_ACTIVE' && (
+          <div className={`st-timer-bar ${isLowTime ? 'is-danger' : ''}`}>
+            <span style={{ width: `${timePct}%` }} />
+          </div>
+        )}
+      </div>
+
+      <h2 className={`st-q-text ${isLong ? 'is-long' : ''}`}>{question.text}</h2>
+
+      {status === 'QUESTION_READING' && (
+        <p className="st-notice">Lean la pregunta con su equipo. El moderador habilitará el pulsador en breve.</p>
+      )}
+      {status === 'QUESTION_ACTIVE' && (
+        <p className="st-notice">Pulsador habilitado. El primer capitán en presionar obtiene el turno.</p>
+      )}
+
+      {question.type === 'MULTIPLE_CHOICE' && question.options && question.options.length > 0 && (
+        <div className="st-options">
+          {question.options.map((option, idx) => {
+            const isSelected = gameState.selectedChoice === idx;
+            let cls = '';
+            if (status === 'SHOWING_RESULT') {
+              if (correctIdx === idx) cls = 'is-correct';
+              else if (isSelected) cls = 'is-wrong';
+              else cls = 'is-dim';
+            } else if (isSelected) {
+              cls = 'is-selected';
+            }
+            return (
+              <div className={`st-option ${cls}`} key={idx}>
+                <span className="st-option-letter">{OPTION_LETTERS[idx]}</span>
+                <span className="st-option-text">{option}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Rótulo: equipo con el turno */}
+      {(status === 'BUZZER_LOCKED' || status === 'EVALUATING') && gameState.buzzerWinner && (
+        <div className="st-lower" style={{ marginTop: question.type === 'MULTIPLE_CHOICE' ? 0 : 'auto' }}>
+          <span className="st-lower-bar" />
+          <div className="st-lower-crest">
+            <TeamAvatar avatar={gameState.buzzerWinner.teamAvatar} teamName={gameState.buzzerWinner.teamName} size={72} />
+          </div>
+          <div className="st-lower-body">
+            <span className="st-lower-label">Turno de respuesta</span>
+            <span className="st-lower-title">{gameState.buzzerWinner.teamName}</span>
+            <span className="st-lower-sub">Capitán: {gameState.buzzerWinner.captainName}</span>
+          </div>
+          <div className="st-lower-side">
+            <span className="st-lower-status">
+              {status === 'EVALUATING'
+                ? 'En evaluación'
+                : question.type === 'ORAL_DEFENSE'
+                ? 'Respuesta oral'
+                : 'Eligiendo opción'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Rótulo: veredicto */}
+      {status === 'SHOWING_RESULT' && gameState.result && (
+        <div
+          className={`st-lower ${
+            gameState.result.grade === 'CORRECT' ? 'is-correct' : gameState.result.grade === 'PARTIAL' ? 'is-partial' : 'is-wrong'
+          }`}
+          style={{ marginTop: question.type === 'MULTIPLE_CHOICE' ? 0 : 'auto' }}
+        >
+          <span className="st-lower-bar" />
+          <div className="st-lower-crest">
+            <TeamAvatar
+              avatar={gameState.buzzerWinner?.teamAvatar}
+              teamName={gameState.result.teamName}
+              size={72}
             />
           </div>
-
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginTop: '16px',
-            padding: '8px 20px',
-            borderRadius: '999px',
-            background: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            fontSize: '12px',
-            color: '#94a3b8'
-          }}>
-            <span>✨ Puedes arrastrar con el cursor o en pantalla táctil para rotar el anillo 3D libremente</span>
+          <div className="st-lower-body">
+            <span className="st-lower-label">
+              {gameState.result.grade === 'CORRECT' && 'Respuesta correcta'}
+              {gameState.result.grade === 'PARTIAL' && 'Respuesta parcial'}
+              {gameState.result.grade === 'INCORRECT' && 'Respuesta incorrecta'}
+            </span>
+            <span className="st-lower-title">{gameState.result.teamName}</span>
+          </div>
+          <div className="st-lower-side">
+            <span className="st-lower-points">+{gameState.result.pointsAwarded}</span>
+            <span className="st-lower-status">Puntos</span>
           </div>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* VISTA A: SALA DE ESPERA / LOBBY (Fase 1) */}
-      {/* ========================================================================= */}
-      {stageViewMode === 'game' && gameState.status === 'LOBBY' && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '370px 1fr',
-          gap: '32px',
-          flex: 1,
-          position: 'relative',
-          zIndex: 1
-        }}>
-          {/* Columna Izquierda: Tarjeta QR */}
-          <aside style={{
-            background: 'rgba(14, 22, 38, 0.85)',
-            border: '1px solid rgba(255, 101, 25, 0.3)',
-            borderRadius: '24px',
-            padding: '30px 24px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            textAlign: 'center',
-            boxShadow: '0 20px 45px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 101, 25, 0.15)',
-            backdropFilter: 'blur(16px)',
-            height: 'fit-content',
-            position: 'sticky',
-            top: '24px'
-          }}>
-            <div style={{
-              fontSize: '12px',
-              fontWeight: 900,
-              textTransform: 'uppercase',
-              letterSpacing: '0.14em',
-              color: '#ff8a3d',
-              marginBottom: '8px'
-            }}>
-              ÚNETE DESDE TU TELÉFONO
-            </div>
-
-            <h2 style={{ margin: '0 0 18px 0', fontSize: '22px', fontWeight: 900, color: '#ffffff' }}>
-              Escanea para participar 📱
-            </h2>
-
-            <div style={{
-              background: '#ffffff',
-              padding: '16px',
-              borderRadius: '20px',
-              boxShadow: '0 16px 36px rgba(0, 0, 0, 0.5), 0 0 35px rgba(255, 101, 25, 0.35)',
-              marginBottom: '20px',
-              display: 'inline-flex'
-            }}>
-              <QRCodeSVG
-                value={joinUrl || window.location.origin}
-                size={220}
-                level="H"
-                includeMargin={false}
+      {/* Cuenta regresiva a pantalla completa */}
+      {status === 'COUNTDOWN_ACTIVE' && (
+        <div className="st-countdown">
+          <span className="st-countdown-caption">El pulsador se activa en</span>
+          <div className="st-countdown-ring">
+            <svg viewBox="0 0 100 100">
+              <circle className="track" cx="50" cy="50" r="48" />
+              <circle
+                className="progress"
+                cx="50"
+                cy="50"
+                r="48"
+                strokeDasharray={circumference}
+                strokeDashoffset={circumference * (1 - countdown / COUNTDOWN_TOTAL)}
               />
+            </svg>
+            <div className="st-countdown-num">
+              <span key={countdown}>{countdown}</span>
             </div>
-
-            <div style={{
-              background: 'rgba(0, 0, 0, 0.5)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              padding: '10px 16px',
-              borderRadius: '12px',
-              fontSize: '13px',
-              color: '#ffb885',
-              fontFamily: 'monospace',
-              wordBreak: 'break-all',
-              marginBottom: '24px',
-              width: '100%',
-              boxSizing: 'border-box'
-            }}>
-              {joinUrl || window.location.origin}
-            </div>
-
-            <div style={{
-              width: '100%',
-              textAlign: 'left',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-              paddingTop: '20px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <span style={{
-                  background: 'linear-gradient(135deg, #ff6519, #ea580c)',
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '50%',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: 900,
-                  color: '#fff',
-                  flexShrink: 0
-                }}>1</span>
-                <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: '1.4' }}>
-                  <strong>Capitanes:</strong> Creen el equipo, suban su foto o escudo y reciban su PIN.
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <span style={{
-                  background: 'linear-gradient(135deg, #ff8a3d, #ff5400)',
-                  width: '24px',
-                  height: '24px',
-                  borderRadius: '50%',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: 900,
-                  color: '#fff',
-                  flexShrink: 0
-                }}>2</span>
-                <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: '1.4' }}>
-                  <strong>Integrantes:</strong> Seleccionen su equipo e ingresen el PIN del capitán.
-                </p>
-              </div>
-            </div>
-          </aside>
-
-          {/* Columna Derecha: Muro de Equipos con Selector 3D / Cuadrícula */}
-          <section style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 900, color: '#f8fafc' }}>
-                  Equipos en la Arena ({stageData.teams.length})
-                </h2>
-                <span style={{ fontSize: '12px', color: '#ffb885', fontWeight: 600 }}>
-                  En vivo
-                </span>
-              </div>
-
-              {/* Selector de Vista: Anillo 3D vs Cuadrícula */}
-              {stageData.teams.length > 0 && (
-                <div style={{
-                  display: 'flex',
-                  gap: '4px',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  padding: '3px',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }}>
-                  <button
-                    onClick={() => setLobbyDisplayMode('3d')}
-                    style={{
-                      padding: '5px 12px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: lobbyDisplayMode === '3d' ? 'var(--primary)' : 'transparent',
-                      color: '#fff',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}
-                  >
-                    <Globe size={14} />
-                    Anillo 3D
-                  </button>
-                  <button
-                    onClick={() => setLobbyDisplayMode('grid')}
-                    style={{
-                      padding: '5px 12px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      background: lobbyDisplayMode === 'grid' ? 'var(--primary)' : 'transparent',
-                      color: '#fff',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}
-                  >
-                    <Grid size={14} />
-                    Cuadrícula
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {stageData.teams.length === 0 ? (
-              <div style={{
-                flex: 1,
-                minHeight: '380px',
-                background: 'rgba(14, 22, 38, 0.5)',
-                border: '2px dashed rgba(255, 101, 25, 0.25)',
-                borderRadius: '24px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '40px',
-                textAlign: 'center'
-              }}>
-                <div style={{
-                  width: '84px',
-                  height: '84px',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 101, 25, 0.12)',
-                  border: '2px solid rgba(255, 101, 25, 0.4)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: '18px',
-                  animation: 'pulse-glow 2s infinite ease-in-out'
-                }}>
-                  <Shield size={40} color="#ff6519" />
-                </div>
-                <h3 style={{ fontSize: '24px', margin: '0 0 8px 0', color: '#fff', fontWeight: 800 }}>
-                  Esperando a los primeros equipos...
-                </h3>
-                <p style={{ margin: 0, color: '#94a3b8', fontSize: '15px', maxWidth: '440px' }}>
-                  Pide a los líderes que escaneen el código QR y registren su grupo para aparecer en la pantalla grande.
-                </p>
-              </div>
-            ) : lobbyDisplayMode === '3d' ? (
-              /* Anillo 3D CircularCarousel de Equipos */
-              <div style={{
-                flex: 1,
-                minHeight: '480px',
-                width: '100%',
-                position: 'relative',
-                borderRadius: '24px',
-                background: 'radial-gradient(ellipse at center, rgba(14, 22, 38, 0.7) 0%, rgba(7, 11, 20, 0.95) 80%)',
-                border: '1px solid rgba(255, 87, 34, 0.25)',
-                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <CircularCarousel
-                  items={stageData.teams.map((t) => ({
-                    src: t.avatar || '/logo-rvc.png',
-                    alt: t.name,
-                    title: t.name,
-                    subtitle: `${t.memberCount || 0} integrantes · ${t.score || 0} pts`
-                  }))}
-                  preset="cylinder"
-                  intro="assemble"
-                  cardWidth={240}
-                  aspectRatio={1}
-                  gap={24}
-                  speed={12}
-                  captions={true}
-                  draggable={true}
-                  stretch={0.35}
-                  parallax={0.3}
-                  depthFade={0.5}
-                  fadeColor="#070b14"
-                />
-              </div>
-            ) : (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))',
-                gap: '20px'
-              }}>
-                {stageData.teams.map((team: Team) => (
-                  <div
-                    key={team.id}
-                    style={{
-                      background: 'rgba(14, 22, 38, 0.85)',
-                      border: '1px solid rgba(255, 101, 25, 0.25)',
-                      borderRadius: '22px',
-                      padding: '20px',
-                      boxShadow: '0 12px 28px rgba(0, 0, 0, 0.45)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '16px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
-                      <TeamAvatar avatar={team.avatar} teamName={team.name} size={58} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <h3 style={{ margin: '0 0 4px 0', fontSize: '19px', fontWeight: 900, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {team.name}
-                        </h3>
-                        {team.motto && (
-                          <p style={{ margin: 0, fontSize: '13px', fontStyle: 'italic', color: '#94a3b8' }}>
-                            "{team.motto}"
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      paddingTop: '12px',
-                      borderTop: '1px solid rgba(255, 255, 255, 0.08)'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Users size={16} color="#ff8a3d" />
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#f1f5f9' }}>
-                          {team.memberCount || 0} integrantes
-                        </span>
-                      </div>
-                      <div style={{
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        color: '#34d399',
-                        background: 'rgba(16, 185, 129, 0.12)',
-                        padding: '4px 10px',
-                        borderRadius: '999px',
-                        border: '1px solid rgba(16, 185, 129, 0.3)'
-                      }}>
-                        LISTO
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          </div>
+          <p className="st-countdown-q">{question.text}</p>
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* ========================================================================= */}
-      {/* VISTA B: PREGUNTA ACTIVA / BUZZER / EVALUACIÓN (Fase 2) */}
-      {/* ========================================================================= */}
-      {(gameState.status === 'QUESTION_READING' ||
-        gameState.status === 'COUNTDOWN_ACTIVE' ||
-        gameState.status === 'QUESTION_ACTIVE' ||
-        gameState.status === 'BUZZER_LOCKED' ||
-        gameState.status === 'EVALUATING' ||
-        gameState.status === 'SHOWING_RESULT') &&
-        gameState.currentQuestion && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          maxWidth: '1100px',
-          margin: '0 auto',
-          width: '100%',
-          position: 'relative',
-          zIndex: 1,
-          gap: '28px',
-          animation: 'fadeIn 0.4s ease'
-        }}>
-          {/* Header de la Pregunta: Tipo de Pregunta y Temporizador */}
-          <div style={{
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: 'rgba(14, 22, 38, 0.85)',
-            border: '1px solid rgba(255, 101, 25, 0.3)',
-            borderRadius: '20px',
-            padding: '14px 28px',
-            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.4)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{
-                background: 'linear-gradient(135deg, var(--primary) 0%, #ea580c 100%)',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: 900,
-                padding: '6px 14px',
-                borderRadius: '10px',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase'
-              }}>
-                PREGUNTA #{gameState.currentQuestion.order}
-              </span>
+/* ==========================================================================
+   Mural de integración: anillo 3D a pantalla completa, sin marcos
+   ========================================================================== */
+function MuralView({ photos }: { photos: MuralPhotoItem[] }) {
+  const items = useMemo(() => {
+    if (photos.length === 0) return [];
+    const base = photos.map((p) => ({
+      src: p.photoUrl,
+      alt: `Fotografía de ${p.senderName}`,
+      title: p.partnerNames?.length ? `${p.senderName} y ${p.partnerNames.join(', ')}` : p.senderName,
+      subtitle: p.caption ? `“${p.caption}” · ${p.senderTeamName}` : p.senderTeamName
+    }));
+    // Con pocas fotos el anillo se ve vacío: repetimos hasta completar al menos 8 tarjetas
+    const filled = [...base];
+    while (filled.length < 8) filled.push(...base);
+    return filled.slice(0, Math.max(8, base.length));
+  }, [photos]);
 
-              <span style={{
-                fontSize: '14px',
-                fontWeight: 800,
-                color: '#ffb885',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                {gameState.currentQuestion.type === 'ORAL_DEFENSE' ? (
-                  <>🎙️ Modalidad: Respuesta con Defensa Oral</>
-                ) : (
-                  <>🔢 Modalidad: Opción Múltiple</>
-                )}
-              </span>
-            </div>
-
-            {/* Temporizador y Puntos */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-              <div style={{
-                fontSize: '14px',
-                fontWeight: 800,
-                color: '#34d399',
-                background: 'rgba(16, 185, 129, 0.12)',
-                padding: '6px 14px',
-                borderRadius: '10px',
-                border: '1px solid rgba(16, 185, 129, 0.3)'
-              }}>
-                +{gameState.currentQuestion.points} PUNTOS
-              </div>
-
-              {gameState.status === 'QUESTION_READING' ? (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(59, 130, 246, 0.15)',
-                  border: '1px solid rgba(59, 130, 246, 0.4)',
-                  padding: '6px 16px',
-                  borderRadius: '12px',
-                  color: '#60a5fa'
-                }}>
-                  <Clock size={20} />
-                  <span style={{ fontSize: '15px', fontWeight: 800 }}>
-                    📖 LECTURA PREVIA
-                  </span>
-                </div>
-              ) : gameState.status === 'COUNTDOWN_ACTIVE' ? (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(245, 158, 11, 0.25)',
-                  border: '2px solid #f59e0b',
-                  padding: '6px 18px',
-                  borderRadius: '12px',
-                  color: '#fbbf24',
-                  animation: 'pulse-glow 0.8s infinite'
-                }}>
-                  <Flame size={20} />
-                  <span style={{ fontSize: '24px', fontWeight: 900, fontFamily: 'monospace' }}>
-                    {gameState.countdownRemaining ?? 7}s
-                  </span>
-                </div>
-              ) : (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: gameState.timeRemaining <= 5 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 101, 25, 0.15)',
-                  border: `1px solid ${gameState.timeRemaining <= 5 ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 101, 25, 0.4)'}`,
-                  padding: '6px 16px',
-                  borderRadius: '12px',
-                  color: gameState.timeRemaining <= 5 ? '#f87171' : '#fff'
-                }}>
-                  <Clock size={20} className={gameState.timeRemaining <= 5 ? 'pulse-indicator' : ''} />
-                  <span style={{ fontSize: '24px', fontWeight: 900, fontFamily: 'monospace' }}>
-                    {gameState.timeRemaining}s
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Tarjeta Gigante del Enunciado de la Pregunta */}
-          <div style={{
-            width: '100%',
-            background: 'rgba(14, 22, 38, 0.9)',
-            border: '2px solid rgba(255, 101, 25, 0.4)',
-            borderRadius: '28px',
-            padding: '44px 36px',
-            textAlign: 'center',
-            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7), 0 0 40px rgba(255, 101, 25, 0.2)',
-            backdropFilter: 'blur(16px)'
-          }}>
-            <h2 style={{
-              margin: 0,
-              fontSize: '34px',
-              fontWeight: 900,
-              lineHeight: '1.4',
-              color: '#ffffff',
-              letterSpacing: '-0.02em',
-              textShadow: '0 4px 12px rgba(0, 0, 0, 0.8)'
-            }}>
-              "{gameState.currentQuestion.text}"
-            </h2>
-          </div>
-
-          {/* CUENTA REGRESIVA GIGANTE EN PANTALLA DE PROYECCIÓN */}
-          {gameState.status === 'COUNTDOWN_ACTIVE' && (
-            <div style={{
-              width: '100%',
-              padding: '24px',
-              borderRadius: '24px',
-              background: 'radial-gradient(circle, rgba(245, 158, 11, 0.3) 0%, rgba(14, 22, 38, 0.95) 75%)',
-              border: '3px solid #f59e0b',
-              textAlign: 'center',
-              boxShadow: '0 0 50px rgba(245, 158, 11, 0.55)',
-              animation: 'pulse-glow 0.8s infinite ease-in-out'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 900, color: '#fbbf24', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '6px' }}>
-                ⚡ ¡PREPÁRENSE CAPITANES! EL PULSADOR SE ACTIVA EN:
-              </div>
-              <div style={{ fontSize: '96px', fontWeight: 900, color: '#ffffff', textShadow: '0 0 45px rgba(245, 158, 11, 1)', lineHeight: 1 }}>
-                {gameState.countdownRemaining ?? 7}
-              </div>
-              <div style={{ fontSize: '16px', color: '#ffedd5', marginTop: '10px', fontWeight: 700 }}>
-                ¡El primer capitán en pulsar se lleva el turno de respuesta!
-              </div>
-            </div>
-          )}
-
-          {/* MENSAJE DE LECTURA PREVIA EN PROYECTOR */}
-          {gameState.status === 'QUESTION_READING' && (
-            <div style={{
-              width: '100%',
-              padding: '14px 24px',
-              borderRadius: '18px',
-              background: 'rgba(59, 130, 246, 0.15)',
-              border: '1px solid rgba(59, 130, 246, 0.4)',
-              textAlign: 'center',
-              color: '#93c5fd',
-              fontSize: '16px',
-              fontWeight: 700
-            }}>
-              📖 Lean el enunciado y opciones con su equipo. El moderador iniciará la cuenta regresiva de 7s para pulsar.
-            </div>
-          )}
-
-          {/* OPCIONES MÚLTIPLES (SI APLICA) */}
-          {gameState.currentQuestion.type === 'MULTIPLE_CHOICE' && gameState.currentQuestion.options && (
-            <div style={{
-              width: '100%',
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '18px'
-            }}>
-              {gameState.currentQuestion.options.map((option, idx) => {
-                const letters = ['A', 'B', 'C', 'D'];
-                const isSelected = gameState.selectedChoice === idx;
-                const isCorrect = gameState.status === 'SHOWING_RESULT' && gameState.currentQuestion?.correctOptionIndex === idx;
-
-                let border = '1px solid rgba(255, 255, 255, 0.12)';
-                let bg = 'rgba(14, 22, 38, 0.8)';
-                let color = '#fff';
-
-                if (isCorrect) {
-                  border = '2px solid #10b981';
-                  bg = 'rgba(16, 185, 129, 0.25)';
-                  color = '#34d399';
-                } else if (isSelected && !isCorrect && gameState.status === 'SHOWING_RESULT') {
-                  border = '2px solid #ef4444';
-                  bg = 'rgba(239, 68, 68, 0.25)';
-                  color = '#f87171';
-                } else if (isSelected) {
-                  border = '2px solid var(--primary)';
-                  bg = 'rgba(255, 101, 25, 0.25)';
-                }
-
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      background: bg,
-                      border,
-                      borderRadius: '18px',
-                      padding: '20px 24px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '16px',
-                      boxShadow: '0 8px 20px rgba(0, 0, 0, 0.4)',
-                      transition: 'all 0.3s ease'
-                    }}
-                  >
-                    <span style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '12px',
-                      background: isCorrect ? '#10b981' : 'linear-gradient(135deg, var(--primary), #ea580c)',
-                      color: '#fff',
-                      fontSize: '18px',
-                      fontWeight: 900,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}>
-                      {letters[idx]}
-                    </span>
-                    <span style={{ fontSize: '20px', fontWeight: 800, color }}>
-                      {option}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* BANNER DRAMÁTICO DE BUZZER GANADOR (CUANDO ALGUIEN PULSÓ) */}
-          {gameState.status === 'BUZZER_LOCKED' && gameState.buzzerWinner && (
-            <div style={{
-              width: '100%',
-              background: 'linear-gradient(135deg, rgba(255, 101, 25, 0.3) 0%, rgba(14, 22, 38, 0.95) 100%)',
-              border: '2px solid var(--primary)',
-              borderRadius: '24px',
-              padding: '24px 32px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              boxShadow: '0 0 40px rgba(255, 101, 25, 0.5)',
-              animation: 'pulse-glow 1.8s infinite ease-in-out'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                <TeamAvatar
-                  avatar={gameState.buzzerWinner.teamAvatar}
-                  teamName={gameState.buzzerWinner.teamName}
-                  size={74}
-                />
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 900, color: '#ff8a3d', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-                    ⚡ ¡PULSADOR GANADO EN PRIMER LUGAR!
-                  </div>
-                  <h3 style={{ margin: '2px 0 0 0', fontSize: '32px', fontWeight: 900, color: '#fff' }}>
-                    {gameState.buzzerWinner.teamName}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '14px', color: '#cbd5e1' }}>
-                    Capitán: <strong>{gameState.buzzerWinner.captainName}</strong>
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'right' }}>
-                <span style={{
-                  display: 'inline-block',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  padding: '8px 18px',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  fontWeight: 800,
-                  color: '#fff'
-                }}>
-                  {gameState.currentQuestion.type === 'ORAL_DEFENSE'
-                    ? '🎙️ Respondiendo oralmente...'
-                    : '📱 Seleccionando opción...'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* VEREDICTO FINAL DE LA PREGUNTA */}
-          {gameState.status === 'SHOWING_RESULT' && gameState.result && (
-            <div style={{
-              width: '100%',
-              background: gameState.result.grade === 'CORRECT'
-                ? 'rgba(16, 185, 129, 0.2)'
-                : gameState.result.grade === 'PARTIAL'
-                ? 'rgba(245, 158, 11, 0.2)'
-                : 'rgba(239, 68, 68, 0.2)',
-              border: `2px solid ${
-                gameState.result.grade === 'CORRECT'
-                  ? '#10b981'
-                  : gameState.result.grade === 'PARTIAL'
-                  ? '#f59e0b'
-                  : '#ef4444'
-              }`,
-              borderRadius: '24px',
-              padding: '24px 32px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                {gameState.result.grade === 'CORRECT' && <CheckCircle2 size={48} color="#34d399" />}
-                {gameState.result.grade === 'PARTIAL' && <Award size={48} color="#fbbf24" />}
-                {gameState.result.grade === 'INCORRECT' && <XCircle size={48} color="#f87171" />}
-
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '26px', fontWeight: 900, color: '#fff' }}>
-                    {gameState.result.grade === 'CORRECT' && '¡RESPUESTA CORRECTA! 🎉'}
-                    {gameState.result.grade === 'PARTIAL' && 'RESPUESTA PARCIAL 🟡'}
-                    {gameState.result.grade === 'INCORRECT' && 'RESPUESTA INCORRECTA ❌'}
-                  </h3>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '15px', color: '#cbd5e1' }}>
-                    Equipo: <strong>{gameState.result.teamName}</strong>
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '32px', fontWeight: 900, color: gameState.result.grade === 'CORRECT' ? '#34d399' : '#fff' }}>
-                  +{gameState.result.pointsAwarded} PTS
-                </div>
-              </div>
-            </div>
-          )}
+  if (photos.length === 0) {
+    return (
+      <div className="st-mural">
+        <div className="st-empty">
+          <span className="st-kicker">Mural de integración</span>
+          <h3>Todavía no hay fotografías aprobadas</h3>
+          <p>
+            Cada dupla puede tomarse una foto desde el chat de su teléfono. Las imágenes aprobadas por los
+            coordinadores se proyectarán aquí.
+          </p>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {/* ========================================================================= */}
-      {/* VISTA C: PODIO Y TABLA DE POSICIONES (LEADERBOARD) */}
-      {/* ========================================================================= */}
-      {gameState.status === 'LEADERBOARD' && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          maxWidth: '1000px',
-          margin: '0 auto',
-          width: '100%',
-          position: 'relative',
-          zIndex: 1,
-          animation: 'fadeIn 0.5s ease'
-        }}>
-          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: 'rgba(255, 101, 25, 0.15)',
-              padding: '6px 16px',
-              borderRadius: '999px',
-              border: '1px solid rgba(255, 101, 25, 0.35)',
-              color: '#ff8a3d',
-              fontSize: '13px',
-              fontWeight: 900,
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-              marginBottom: '10px'
-            }}>
-              <Trophy size={18} />
-              TABLA GENERAL DE PUNTOS
-            </div>
-            <h2 style={{
-              margin: 0,
-              fontSize: '36px',
-              fontWeight: 900,
-              background: 'linear-gradient(to right, #ffffff, #ffb885)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>
-              Marcador Oficial en Vivo 🏆
-            </h2>
-          </div>
-
-          {/* Podio Top 3 */}
-          {rankedTeams.length >= 3 && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1.2fr 1fr',
-              gap: '20px',
-              width: '100%',
-              alignItems: 'flex-end',
-              marginBottom: '36px'
-            }}>
-              {/* 2do Lugar (Plata) */}
-              <div style={{
-                background: 'rgba(14, 22, 38, 0.85)',
-                border: '2px solid rgba(203, 213, 225, 0.4)',
-                borderRadius: '24px',
-                padding: '24px 20px',
-                textAlign: 'center',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)'
-              }}>
-                <span style={{ fontSize: '28px' }}>🥈</span>
-                <div style={{ margin: '10px auto' }}>
-                  <TeamAvatar avatar={rankedTeams[1].avatar} teamName={rankedTeams[1].name} size={64} />
-                </div>
-                <h3 style={{ margin: '6px 0 2px 0', fontSize: '20px', fontWeight: 900, color: '#fff' }}>
-                  {rankedTeams[1].name}
-                </h3>
-                <div style={{ fontSize: '24px', fontWeight: 900, color: '#cbd5e1' }}>
-                  {rankedTeams[1].score || 0} pts
-                </div>
-              </div>
-
-              {/* 1er Lugar (Oro - Destacado) */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(255, 101, 25, 0.25) 0%, rgba(14, 22, 38, 0.95) 100%)',
-                border: '2px solid #ffb703',
-                borderRadius: '28px',
-                padding: '34px 24px',
-                textAlign: 'center',
-                boxShadow: '0 0 45px rgba(255, 183, 3, 0.35)',
-                transform: 'translateY(-14px)'
-              }}>
-                <span style={{ fontSize: '40px' }}>👑</span>
-                <div style={{ margin: '10px auto' }}>
-                  <TeamAvatar avatar={rankedTeams[0].avatar} teamName={rankedTeams[0].name} size={84} />
-                </div>
-                <h3 style={{ margin: '8px 0 2px 0', fontSize: '24px', fontWeight: 900, color: '#fff' }}>
-                  {rankedTeams[0].name}
-                </h3>
-                <div style={{ fontSize: '32px', fontWeight: 900, color: '#fde047' }}>
-                  {rankedTeams[0].score || 0} pts
-                </div>
-              </div>
-
-              {/* 3er Lugar (Bronce) */}
-              <div style={{
-                background: 'rgba(14, 22, 38, 0.85)',
-                border: '2px solid rgba(217, 119, 6, 0.4)',
-                borderRadius: '24px',
-                padding: '24px 20px',
-                textAlign: 'center',
-                boxShadow: '0 10px 30px rgba(0, 0, 0, 0.5)'
-              }}>
-                <span style={{ fontSize: '28px' }}>🥉</span>
-                <div style={{ margin: '10px auto' }}>
-                  <TeamAvatar avatar={rankedTeams[2].avatar} teamName={rankedTeams[2].name} size={64} />
-                </div>
-                <h3 style={{ margin: '6px 0 2px 0', fontSize: '20px', fontWeight: 900, color: '#fff' }}>
-                  {rankedTeams[2].name}
-                </h3>
-                <div style={{ fontSize: '24px', fontWeight: 900, color: '#f59e0b' }}>
-                  {rankedTeams[2].score || 0} pts
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Lista completa de Posiciones */}
-          <div style={{
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px'
-          }}>
-            {rankedTeams.map((team, idx) => (
-              <div
-                key={team.id}
-                style={{
-                  background: 'rgba(14, 22, 38, 0.8)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '16px',
-                  padding: '14px 24px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  boxShadow: '0 6px 16px rgba(0,0,0,0.3)'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <span style={{
-                    fontSize: '18px',
-                    fontWeight: 900,
-                    color: idx < 3 ? 'var(--primary)' : '#94a3b8',
-                    width: '32px'
-                  }}>
-                    #{idx + 1}
-                  </span>
-                  <TeamAvatar avatar={team.avatar} teamName={team.name} size={42} />
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fff' }}>
-                      {team.name}
-                    </h4>
-                    <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                      {team.memberCount || 0} participantes
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ fontSize: '22px', fontWeight: 900, color: '#34d399' }}>
-                  {team.score || 0} pts
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+  return (
+    <div className="st-mural">
+      <div className="st-section-head">
+        <h2 className="st-section-title">Mural de integración</h2>
+        <span className="st-section-meta">{photos.length} fotografías aprobadas</span>
+      </div>
+      <div className="st-mural-stage">
+        <CircularCarousel
+          items={items}
+          preset="cylinder"
+          intro="rise"
+          cardWidth={320}
+          aspectRatio={0.8}
+          gap={28}
+          tilt={-4}
+          speed={10}
+          captions
+          draggable
+          pauseOnHover={false}
+          parallax={0.12}
+          stretch={0.3}
+          depthFade={0.72}
+          fadeColor="#0b0c0e"
+          innerShade={0.75}
+          cornerRadius={4}
+        />
+      </div>
     </div>
   );
 }
