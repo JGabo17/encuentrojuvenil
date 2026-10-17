@@ -5,6 +5,7 @@ import { fetchStageData } from '../services/api';
 import { TeamAvatar } from '../components/TeamAvatar';
 import confetti from 'canvas-confetti';
 import type { StageData, Team, GameState, MuralPhotoItem } from '../../../shared/types/index.js';
+import { CircularCarousel, type CarouselPreset } from '../components/CircularCarousel';
 import {
   Users,
   Shield,
@@ -17,7 +18,10 @@ import {
   XCircle,
   Award,
   Camera,
-  Flame
+  Flame,
+  Globe,
+  Grid,
+  Sparkles
 } from 'lucide-react';
 
 export function StagePage() {
@@ -39,10 +43,11 @@ export function StagePage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(socket.connected);
 
-  // Fase 3: Mural Social de Fotografías
+  // Fase 3: Mural Social de Fotografías & 3D Carousel (React Bits)
   const [stageViewMode, setStageViewMode] = useState<'game' | 'mural'>('game');
   const [muralPhotos, setMuralPhotos] = useState<MuralPhotoItem[]>([]);
-  const [currentPhotoIdx, setCurrentPhotoIdx] = useState(0);
+  const [carouselPreset, setCarouselPreset] = useState<CarouselPreset>('cylinder');
+  const [lobbyDisplayMode, setLobbyDisplayMode] = useState<'3d' | 'grid'>('3d');
 
   useEffect(() => {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -118,14 +123,7 @@ export function StagePage() {
     };
   }, []);
 
-  // Rotación automática del carrusel de fotografías cada 6 segundos
-  useEffect(() => {
-    if (muralPhotos.length <= 1) return;
-    const interval = setInterval(() => {
-      setCurrentPhotoIdx((prev) => (prev + 1) % muralPhotos.length);
-    }, 6000);
-    return () => clearInterval(interval);
-  }, [muralPhotos.length]);
+
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -196,23 +194,33 @@ export function StagePage() {
         zIndex: 1
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-          {/* Emblema Tipográfico RVC */}
+          {/* Emblema Oficial RVC con Glow y Logo */}
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            padding: '8px 20px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, rgba(255, 101, 25, 0.3) 0%, rgba(14, 22, 38, 0.8) 100%)',
+            gap: '12px',
+            padding: '6px 20px 6px 8px',
+            borderRadius: '999px',
+            background: 'linear-gradient(135deg, rgba(255, 87, 34, 0.28) 0%, rgba(12, 20, 36, 0.9) 100%)',
             border: '2px solid var(--primary)',
-            boxShadow: '0 0 25px rgba(255, 101, 25, 0.5), inset 0 0 15px rgba(255, 101, 25, 0.2)',
-            letterSpacing: '0.08em'
+            boxShadow: '0 0 25px rgba(255, 87, 34, 0.45), inset 0 0 15px rgba(255, 87, 34, 0.2)',
           }}>
+            <img
+              src="/logo-rvc.png"
+              alt="Logo RVC"
+              style={{
+                width: '46px',
+                height: '46px',
+                objectFit: 'contain',
+                filter: 'drop-shadow(0 0 10px rgba(255, 87, 34, 0.85))'
+              }}
+            />
             <span style={{
-              fontSize: '28px',
+              fontSize: '26px',
               fontWeight: 900,
               color: '#ffffff',
-              textShadow: '0 2px 12px rgba(255, 101, 25, 0.85)',
+              letterSpacing: '0.06em',
+              textShadow: '0 2px 12px rgba(255, 87, 34, 0.85)',
               lineHeight: 1
             }}>
               RVC
@@ -381,7 +389,7 @@ export function StagePage() {
       </header>
 
       {/* ========================================================================= */}
-      {/* VISTA MURAL SOCIAL: PROYECCIÓN ROTATIVA DE DUPLAS (Fase 3) */}
+      {/* VISTA MURAL SOCIAL: PROYECCIÓN 3D ROTATIVA DE DUPLAS (React Bits 3D) */}
       {/* ========================================================================= */}
       {stageViewMode === 'mural' && (
         <div style={{
@@ -394,173 +402,159 @@ export function StagePage() {
           zIndex: 1,
           padding: '10px 0'
         }}>
-          {muralPhotos.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              maxWidth: '680px',
-              padding: '60px 40px',
-              borderRadius: '24px',
-              background: 'rgba(14, 22, 38, 0.75)',
-              border: '2px dashed rgba(59, 130, 246, 0.4)',
-              backdropFilter: 'blur(16px)'
-            }}>
+          {/* Barra de Controles y Presets 3D */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            maxWidth: '1080px',
+            marginBottom: '14px',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{
-                width: '88px',
-                height: '88px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.4) 100%)',
-                border: '2px solid #60a5fa',
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, var(--primary) 0%, #ea580c 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                margin: '0 auto 24px auto',
-                boxShadow: '0 0 35px rgba(59, 130, 246, 0.4)'
+                boxShadow: '0 0 15px rgba(255, 87, 34, 0.4)'
               }}>
-                <Camera size={44} color="#60a5fa" />
+                <Sparkles size={20} color="#fff" />
               </div>
-              <h2 style={{ fontSize: '32px', fontWeight: 900, color: '#fff', margin: '0 0 12px 0' }}>
-                📸 Mural de Integración — Encuentro Juvenil
-              </h2>
-              <p style={{ fontSize: '18px', color: '#cbd5e1', lineHeight: 1.6, margin: '0 0 24px 0' }}>
-                ¡Es momento de conocerse y compartir! Abran el chat de su dupla en sus teléfonos móviles, tómense una selfie o foto de grupo y envíenla para que se proyecte aquí.
-              </p>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 24px',
-                borderRadius: '999px',
-                background: 'rgba(255, 101, 25, 0.15)',
-                border: '1px solid var(--primary)',
-                color: '#ffb885',
-                fontSize: '14px',
-                fontWeight: 700
-              }}>
-                ⚡ Las fotos aprobadas por los coordinadores rotarán en este mural
+              <div>
+                <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#fff', margin: 0 }}>
+                  Mural Social 3D — Duplas RVC
+                </h2>
+                <span style={{ fontSize: '12px', color: '#ffb885', fontWeight: 600 }}>
+                  {muralPhotos.length > 0
+                    ? `${muralPhotos.length} fotografía${muralPhotos.length > 1 ? 's' : ''} en rotación 3D en tiempo real`
+                    : 'Modo demostración · ¡Sube tu foto desde el chat móvil para verla girar en 3D!'}
+                </span>
               </div>
             </div>
-          ) : (
+
+            {/* Selector de Presets de Giro 3D */}
             <div style={{
-              maxWidth: '960px',
-              width: '100%',
               display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '24px',
-              animation: 'fadeIn 0.5s ease'
+              gap: '4px',
+              background: 'rgba(255, 255, 255, 0.06)',
+              padding: '4px',
+              borderRadius: '12px',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              backdropFilter: 'blur(10px)'
             }}>
-              {(() => {
-                const photo = muralPhotos[currentPhotoIdx % muralPhotos.length];
-                return (
-                  <div style={{
-                    width: '100%',
-                    borderRadius: '24px',
-                    overflow: 'hidden',
-                    background: 'rgba(14, 22, 38, 0.85)',
-                    border: '2px solid rgba(59, 130, 246, 0.4)',
-                    boxShadow: '0 20px 60px rgba(0,0,0,0.8), 0 0 40px rgba(59, 130, 246, 0.25)',
-                    backdropFilter: 'blur(16px)',
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}>
-                    <div style={{
-                      maxHeight: '520px',
-                      overflow: 'hidden',
-                      position: 'relative',
-                      background: '#020617',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <img
-                        src={photo.photoUrl}
-                        alt="Fotografía de integración"
-                        style={{
-                          width: '100%',
-                          maxHeight: '520px',
-                          objectFit: 'contain',
-                          display: 'block'
-                        }}
-                      />
-                      <div style={{
-                        position: 'absolute',
-                        top: '18px',
-                        right: '18px',
-                        padding: '6px 16px',
-                        borderRadius: '999px',
-                        background: 'rgba(0,0,0,0.7)',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: '#fff',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        backdropFilter: 'blur(8px)'
-                      }}>
-                        {currentPhotoIdx + 1} / {muralPhotos.length}
-                      </div>
-                    </div>
-
-                    <div style={{
-                      padding: '24px 32px',
-                      background: 'linear-gradient(to bottom, rgba(14, 22, 38, 0.95), rgba(7, 10, 18, 0.98))',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '16px'
-                    }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                          <span style={{ fontSize: '20px', fontWeight: 900, color: '#fff' }}>
-                            {photo.senderName}
-                          </span>
-                          <span style={{
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            padding: '3px 10px',
-                            borderRadius: '8px',
-                            background: 'rgba(255, 101, 25, 0.2)',
-                            color: 'var(--primary)',
-                            border: '1px solid rgba(255, 101, 25, 0.4)'
-                          }}>
-                            {photo.senderTeamName}
-                          </span>
-                          {photo.partnerNames.length > 0 && (
-                            <span style={{ fontSize: '15px', color: '#94a3b8' }}>
-                              junto a su dupla <strong style={{ color: '#60a5fa' }}>{photo.partnerNames.join(', ')}</strong>
-                            </span>
-                          )}
-                        </div>
-
-                        {photo.caption && (
-                          <div style={{ fontSize: '18px', color: '#ffeedd', fontStyle: 'italic', marginTop: '4px' }}>
-                            "{photo.caption}"
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {muralPhotos.slice(0, 12).map((_, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => setCurrentPhotoIdx(idx)}
-                            style={{
-                              width: idx === currentPhotoIdx % muralPhotos.length ? '24px' : '8px',
-                              height: '8px',
-                              borderRadius: '999px',
-                              background: idx === currentPhotoIdx % muralPhotos.length ? '#3b82f6' : 'rgba(255,255,255,0.2)',
-                              border: 'none',
-                              cursor: 'pointer',
-                              transition: 'all 0.3s ease'
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+              {(['cylinder', 'orbit', 'wheel', 'panorama'] as CarouselPreset[]).map((presetKey) => (
+                <button
+                  key={presetKey}
+                  onClick={() => setCarouselPreset(presetKey)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: carouselPreset === presetKey ? 'var(--primary)' : 'transparent',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: carouselPreset === presetKey ? '0 0 12px rgba(255, 87, 34, 0.5)' : 'none'
+                  }}
+                >
+                  {presetKey === 'cylinder' && 'Cilindro 3D'}
+                  {presetKey === 'orbit' && 'Órbita'}
+                  {presetKey === 'wheel' && 'Rueda'}
+                  {presetKey === 'panorama' && 'Panorama'}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+
+          {/* Carrusel Circular 3D Ultra-Pro */}
+          <div style={{
+            width: '100%',
+            maxWidth: '1100px',
+            height: '580px',
+            position: 'relative',
+            borderRadius: '24px',
+            background: 'radial-gradient(ellipse at center, rgba(14, 22, 38, 0.6) 0%, rgba(7, 11, 20, 0.95) 80%)',
+            border: '1px solid rgba(255, 87, 34, 0.25)',
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(255, 87, 34, 0.08)',
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <CircularCarousel
+              items={
+                muralPhotos.length > 0
+                  ? muralPhotos.map((p) => ({
+                      src: p.photoUrl,
+                      alt: `Foto de ${p.senderName}`,
+                      title: `${p.senderName} (${p.senderTeamName})`,
+                      subtitle: p.caption || (p.partnerNames?.length ? `Dupla con ${p.partnerNames.join(', ')}` : 'Encuentro Juvenil RVC')
+                    }))
+                  : [
+                      {
+                        src: '/logo-rvc.png',
+                        title: 'Encuentro Juvenil RVC',
+                        subtitle: '¡Sube una selfie con tu dupla para proyectarla en 3D!'
+                      },
+                      {
+                        src: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=900&q=80',
+                        title: 'Juventud & Fe',
+                        subtitle: 'Comunidad Unida'
+                      },
+                      {
+                        src: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900&q=80',
+                        title: 'Amistad y Servicio',
+                        subtitle: 'Creciendo en Duplas'
+                      },
+                      {
+                        src: 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=900&q=80',
+                        title: 'Celebración & Alegría',
+                        subtitle: 'Ronda de Integración'
+                      },
+                      {
+                        src: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=900&q=80',
+                        title: 'Energía & Pasión',
+                        subtitle: 'Arena RVC'
+                      }
+                    ]
+              }
+              preset={carouselPreset}
+              intro="rise"
+              cardWidth={280}
+              aspectRatio={1}
+              gap={30}
+              speed={13}
+              captions={true}
+              draggable={true}
+              stretch={0.4}
+              parallax={0.35}
+              depthFade={0.55}
+              fadeColor="#070b14"
+            />
+          </div>
+
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '16px',
+            padding: '8px 20px',
+            borderRadius: '999px',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            fontSize: '12px',
+            color: '#94a3b8'
+          }}>
+            <span>✨ Puedes arrastrar con el cursor o en pantalla táctil para rotar el anillo 3D libremente</span>
+          </div>
         </div>
       )}
 
@@ -688,15 +682,68 @@ export function StagePage() {
             </div>
           </aside>
 
-          {/* Columna Derecha: Muro de Equipos */}
+          {/* Columna Derecha: Muro de Equipos con Selector 3D / Cuadrícula */}
           <section style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
-              <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 900, color: '#f8fafc' }}>
-                Equipos en la Arena ({stageData.teams.length})
-              </h2>
-              <span style={{ fontSize: '13px', color: '#ffb885', fontWeight: 600 }}>
-                Sincronizado en tiempo real
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 900, color: '#f8fafc' }}>
+                  Equipos en la Arena ({stageData.teams.length})
+                </h2>
+                <span style={{ fontSize: '12px', color: '#ffb885', fontWeight: 600 }}>
+                  En vivo
+                </span>
+              </div>
+
+              {/* Selector de Vista: Anillo 3D vs Cuadrícula */}
+              {stageData.teams.length > 0 && (
+                <div style={{
+                  display: 'flex',
+                  gap: '4px',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  padding: '3px',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  <button
+                    onClick={() => setLobbyDisplayMode('3d')}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: lobbyDisplayMode === '3d' ? 'var(--primary)' : 'transparent',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Globe size={14} />
+                    Anillo 3D
+                  </button>
+                  <button
+                    onClick={() => setLobbyDisplayMode('grid')}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: lobbyDisplayMode === 'grid' ? 'var(--primary)' : 'transparent',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Grid size={14} />
+                    Cuadrícula
+                  </button>
+                </div>
+              )}
             </div>
 
             {stageData.teams.length === 0 ? (
@@ -733,6 +780,43 @@ export function StagePage() {
                 <p style={{ margin: 0, color: '#94a3b8', fontSize: '15px', maxWidth: '440px' }}>
                   Pide a los líderes que escaneen el código QR y registren su grupo para aparecer en la pantalla grande.
                 </p>
+              </div>
+            ) : lobbyDisplayMode === '3d' ? (
+              /* Anillo 3D CircularCarousel de Equipos */
+              <div style={{
+                flex: 1,
+                minHeight: '480px',
+                width: '100%',
+                position: 'relative',
+                borderRadius: '24px',
+                background: 'radial-gradient(ellipse at center, rgba(14, 22, 38, 0.7) 0%, rgba(7, 11, 20, 0.95) 80%)',
+                border: '1px solid rgba(255, 87, 34, 0.25)',
+                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)',
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <CircularCarousel
+                  items={stageData.teams.map((t) => ({
+                    src: t.avatar || '/logo-rvc.png',
+                    alt: t.name,
+                    title: t.name,
+                    subtitle: `${t.memberCount || 0} integrantes · ${t.score || 0} pts`
+                  }))}
+                  preset="cylinder"
+                  intro="assemble"
+                  cardWidth={240}
+                  aspectRatio={1}
+                  gap={24}
+                  speed={12}
+                  captions={true}
+                  draggable={true}
+                  stretch={0.35}
+                  parallax={0.3}
+                  depthFade={0.5}
+                  fadeColor="#070b14"
+                />
               </div>
             ) : (
               <div style={{

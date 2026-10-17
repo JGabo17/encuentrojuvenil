@@ -539,28 +539,33 @@ export function ParticipantPage() {
           boxShadow: '0 20px 45px rgba(0,0,0,0.6)',
           border: '1px solid rgba(255, 101, 25, 0.25)'
         }}>
-          {/* Emblema Tipográfico RVC */}
+          {/* Logo Oficial RVC con Glow 3D */}
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '8px 24px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, rgba(255, 101, 25, 0.28) 0%, rgba(14, 22, 38, 0.85) 100%)',
-            border: '2px solid var(--primary)',
-            boxShadow: '0 0 25px rgba(255, 101, 25, 0.45), inset 0 0 12px rgba(255, 101, 25, 0.2)',
+            position: 'relative',
             marginBottom: '14px'
           }}>
-            <span style={{
-              fontSize: '28px',
-              fontWeight: 900,
-              color: '#ffffff',
-              textShadow: '0 2px 10px rgba(255, 101, 25, 0.85)',
-              letterSpacing: '0.08em',
-              lineHeight: 1
-            }}>
-              RVC
-            </span>
+            <div style={{
+              position: 'absolute',
+              inset: '-8px',
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(255, 87, 34, 0.45) 0%, transparent 70%)',
+              animation: 'pulse-glow 2.5s infinite ease-in-out'
+            }} />
+            <img
+              src="/logo-rvc.png"
+              alt="Logo RVC"
+              style={{
+                width: '74px',
+                height: '74px',
+                objectFit: 'contain',
+                position: 'relative',
+                zIndex: 1,
+                filter: 'drop-shadow(0 0 14px rgba(255, 87, 34, 0.85))'
+              }}
+            />
           </div>
 
           <div style={{
@@ -1036,20 +1041,18 @@ export function ParticipantPage() {
               marginBottom: '14px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{
-                  fontSize: '13px',
-                  fontWeight: 900,
-                  color: '#fff',
-                  background: 'linear-gradient(135deg, var(--primary) 0%, #ea580c 100%)',
-                  padding: '3px 9px',
-                  borderRadius: '8px',
-                  letterSpacing: '0.08em',
-                  boxShadow: '0 2px 8px rgba(255, 101, 25, 0.4)'
-                }}>
-                  RVC
-                </span>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--primary)', letterSpacing: '0.1em' }}>
-                  JOVEN
+                <img
+                  src="/logo-rvc.png"
+                  alt="RVC"
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    objectFit: 'contain',
+                    filter: 'drop-shadow(0 0 6px rgba(255, 87, 34, 0.6))'
+                  }}
+                />
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#fff', letterSpacing: '0.06em' }}>
+                  RVC JOVEN
                 </span>
               </div>
 
