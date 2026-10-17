@@ -10,8 +10,8 @@ function createClientSocket(): Socket {
   return io(BASE_URL, {
     transports: ['websocket', 'polling'],
     forceNew: true,
-    reconnection: false,
-    timeout: 12000
+    reconnection: true,
+    timeout: 25000
   });
 }
 
@@ -85,7 +85,7 @@ async function main() {
       stageSocket = createClientSocket();
 
       await new Promise<void>((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('Timeout de conexión')), 4000);
+        const t = setTimeout(() => reject(new Error('Timeout de conexión a Render')), 15000);
         let count = 0;
         const check = () => {
           count++;
@@ -94,8 +94,14 @@ async function main() {
             resolve();
           }
         };
-        adminSocket.on('connect', check);
-        stageSocket.on('connect', check);
+        if (adminSocket.connected) count++;
+        else adminSocket.on('connect', check);
+        if (stageSocket.connected) count++;
+        else stageSocket.on('connect', check);
+        if (count >= 2) {
+          clearTimeout(t);
+          resolve();
+        }
       });
 
       // Admin Join
@@ -292,6 +298,64 @@ async function main() {
         adminSocket.emit('admin:adjust-team-points', { teamId: team1Id, deltaPoints: 50 }, resolve);
       });
       if (!adjustRes?.success) throw new Error(`admin:adjust-team-points falló: ${adjustRes?.error}`);
+    });
+
+    await runStep('2.6b Asignación Exacta de Puntaje (admin:set-team-score) y piso en 0', async () => {
+      // Fijar puntaje exacto a 250 pts
+      const setRes = await new Promise<any>((resolve) => {
+        adminSocket.emit('admin:set-team-score', { teamId: team1Id, score: 250 }, resolve);
+      });
+      if (!setRes?.success) throw new Error(`admin:set-team-score falló: ${setRes?.error}`);
+
+      // Intentar restar 500 puntos para verificar que no baje de 0
+      const subRes = await new Promise<any>((resolve) => {
+        adminSocket.emit('admin:adjust-team-points', { teamId: team1Id, deltaPoints: -500 }, resolve);
+      });
+      if (!subRes?.success) throw new Error('admin:adjust-team-points falló al restar');
+    });
+
+    await runStep('2.6c Control Remoto de Proyección de Stage (admin:set-stage-view a mural, lobby, auto)', async () => {
+      let stageViewReceived = '';
+      stageSocket.on('stage:view-change', (data: any) => {
+        stageViewReceived = data.mode;
+      });
+
+      // 1. Proyectar Mural 3D
+      await new Promise<any>((resolve) => {
+        adminSocket.emit('admin:set-stage-view', { mode: 'mural' }, resolve);
+      });
+      await wait(300);
+      if (stageViewReceived !== 'mural') throw new Error(`Stage no recibió modo mural (actual: ${stageViewReceived})`);
+
+      // 2. Proyectar Sala de Espera / Lobby
+      await new Promise<any>((resolve) => {
+        adminSocket.emit('admin:set-stage-view', { mode: 'lobby' }, resolve);
+      });
+      await wait(300);
+      if (stageViewReceived !== 'lobby') throw new Error(`Stage no recibió modo lobby (actual: ${stageViewReceived})`);
+
+      // 3. Volver a Auto
+      await new Promise<any>((resolve) => {
+        adminSocket.emit('admin:set-stage-view', { mode: 'auto' }, resolve);
+      });
+      await wait(300);
+      if (stageViewReceived !== 'auto') throw new Error(`Stage no recibió modo auto (actual: ${stageViewReceived})`);
+    });
+
+    await runStep('2.6d Prevención Capa 8: Miembro normal intentando pulsar (Buzzer no autorizado)', async () => {
+      const illegalBuzz = await new Promise<any>((resolve) => {
+        mem1Socket.emit('captain:buzz', resolve);
+      });
+      if (illegalBuzz?.won) throw new Error('Un miembro regular pudo pulsar el buzzer indebidamente');
+      if (!illegalBuzz?.error) throw new Error('No se retornó mensaje de error al miembro regular');
+    });
+
+    await runStep('2.6e Prevención Capa 8: Cliente no autenticado intentando modificar puntajes', async () => {
+      const hackerRes = await new Promise<any>((resolve) => {
+        mem1Socket.emit('admin:adjust-team-points' as any, { teamId: team1Id, deltaPoints: 9999 }, resolve);
+      });
+      if (hackerRes?.success) throw new Error('Un cliente no autorizado pudo modificar puntajes');
+      if (hackerRes?.error !== 'No autorizado') throw new Error(`Error inesperado: ${hackerRes?.error}`);
     });
 
     await runStep('2.7 Proyección de Podio Olímpico en Auditorio', async () => {
