@@ -273,7 +273,7 @@ export interface ClientToServerEvents {
 
   // Pantalla del Auditorio / Proyector
   'stage:join': (
-    callback?: (response: { success: boolean; data: StageData; gameState: GameState }) => void
+    callback?: (response: { success: boolean; data: StageData; gameState: GameState; chatEnabled?: boolean }) => void
   ) => void;
 
   // Admin general

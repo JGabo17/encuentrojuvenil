@@ -6,7 +6,7 @@ import { TeamAvatar } from '../components/TeamAvatar';
 import { CircularCarousel } from '../components/CircularCarousel';
 import confetti from 'canvas-confetti';
 import type { StageData, Team, GameState, GameStatus, MuralPhotoItem, WallMessage } from '../../../shared/types/index.js';
-import { Maximize, Minimize, Trophy, Camera, Radio, QrCode } from 'lucide-react';
+import { Maximize, Minimize, Trophy, Camera, Radio, QrCode, Music, Volume2, VolumeX } from 'lucide-react';
 import '../styles/stage.css';
 
 const PUBLIC_URL_FALLBACK = 'https://encuentro-juvenil.onrender.com';
@@ -53,6 +53,13 @@ export function StagePage() {
   const [wallMessages, setWallMessages] = useState<WallMessage[]>([]);
   const [wallEnabled, setWallEnabled] = useState(true);
 
+  // Controles de audio de la pista musical ambiental
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [chatActive, setChatActive] = useState(false);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+
   // Controles del operador: se ocultan solos para no ensuciar la proyección
   const [controlsVisible, setControlsVisible] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,6 +81,7 @@ export function StagePage() {
           setStageData(res.data);
           if (res.data.muralPhotos) setMuralPhotos(res.data.muralPhotos);
           if (res.gameState) setGameState(res.gameState);
+          if (typeof res.chatEnabled === 'boolean') setChatActive(res.chatEnabled);
         }
       });
       socket.emit('stage:get-wall', (res) => {
@@ -130,6 +138,15 @@ export function StagePage() {
       setWallMessages(wall.messages);
     });
 
+    function onChatStatusChange(data: { chatEnabled: boolean }) {
+      setChatActive(data.chatEnabled);
+      // Si el moderador activó el chat y no hay trivia en juego, proyectar el mural automáticamente
+      if (data.chatEnabled) {
+        setStageViewMode((prev) => (prev === 'auto' ? 'mural' : prev));
+      }
+    }
+    socket.on('chat:status-change', onChatStatusChange);
+
     return () => {
       socket.off('connect', registerStage);
       socket.off('disconnect');
@@ -140,6 +157,7 @@ export function StagePage() {
       socket.off('game:score-updated');
       socket.off('stage:mural-update');
       socket.off('stage:wall-update');
+      socket.off('chat:status-change', onChatStatusChange);
     };
   }, []);
 
@@ -207,6 +225,53 @@ export function StagePage() {
       status === 'BUZZER_LOCKED' ||
       status === 'EVALUATING' ||
       status === 'SHOWING_RESULT');
+
+  // Reproducción de la pista musical ambiental:
+  // Suena mientras el chat esté activo o se proyecte el mural, y se silencia automáticamente
+  // si comienza una pregunta de trivia para no interferir con la voz del moderador.
+  const shouldPlayAudio = (chatActive || isMural) && !isQuestionPhase && !isAudioMuted;
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (shouldPlayAudio) {
+      audio.volume = 0.55;
+      const p = audio.play();
+      if (p !== undefined) {
+        p.then(() => {
+          setIsAudioPlaying(true);
+          setAudioBlocked(false);
+        }).catch((err) => {
+          console.warn('[Stage Audio] Autoplay bloqueado por política del navegador:', err);
+          setIsAudioPlaying(false);
+          setAudioBlocked(true);
+        });
+      }
+    } else {
+      audio.pause();
+      setIsAudioPlaying(false);
+    }
+  }, [shouldPlayAudio]);
+
+  // Si el navegador exigió interacción previa para el audio, desbloquear con el primer clic o tecla
+  useEffect(() => {
+    if (!audioBlocked) return;
+    const unlock = () => {
+      if (audioRef.current && shouldPlayAudio) {
+        audioRef.current.play().then(() => {
+          setIsAudioPlaying(true);
+          setAudioBlocked(false);
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener('click', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [audioBlocked, shouldPlayAudio]);
 
   const showLobby = !isMural && !isForcedLeaderboard && (isForcedLobby || (!isQuestionPhase && status === 'LOBBY'));
 
@@ -288,11 +353,54 @@ export function StagePage() {
         >
           <Camera size={14} /> Mural ({muralPhotos.length})
         </button>
+        <button
+          className={`st-ctrl ${isAudioPlaying ? 'is-active' : ''}`}
+          onClick={() => {
+            if (isAudioPlaying) {
+              setIsAudioMuted(true);
+              audioRef.current?.pause();
+              setIsAudioPlaying(false);
+            } else {
+              setIsAudioMuted(false);
+              audioRef.current?.play().then(() => {
+                setIsAudioPlaying(true);
+                setAudioBlocked(false);
+              }).catch(() => {});
+            }
+          }}
+          title={isAudioPlaying ? 'Silenciar pista ambiental' : 'Reproducir pista ambiental'}
+        >
+          {isAudioPlaying ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          <span>{isAudioPlaying ? 'Pista: En vivo' : 'Pista: Pausada'}</span>
+        </button>
         <button className="st-ctrl" onClick={toggleFullscreen} title="Pantalla completa">
           {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
           {isFullscreen ? 'Salir' : 'Pantalla completa'}
         </button>
       </div>
+
+      {/* Pista musical de fondo en bucle */}
+      <audio ref={audioRef} src="/audio/mural_track.mp3" loop preload="auto" />
+
+      {/* Botón flotante para activar el audio si el navegador bloqueó el autoplay inicial */}
+      {audioBlocked && shouldPlayAudio && (
+        <button
+          type="button"
+          onClick={() => {
+            if (audioRef.current) {
+              audioRef.current.play().then(() => {
+                setIsAudioPlaying(true);
+                setAudioBlocked(false);
+              }).catch(() => {});
+            }
+          }}
+          className="st-audio-toast"
+          title="Haz clic para activar el audio del auditorio"
+        >
+          <Music size={16} className="st-pulse" />
+          <span>Pista de fondo lista · Haz clic aquí para activar audio</span>
+        </button>
+      )}
 
       {/* ================================================================ CONTENIDO */}
       <main className="st-main" key={isMural ? 'mural' : showLobby ? 'lobby' : status}>

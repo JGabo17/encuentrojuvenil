@@ -337,7 +337,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
         const eventId = data.teams[0]?.eventId || 'default';
         const muralPhotos = await getApprovedMuralPhotos(eventId);
         data.muralPhotos = muralPhotos;
-        callback?.({ success: true, data, gameState });
+        callback?.({ success: true, data, gameState, chatEnabled: isChatEnabled() });
       } catch (err: any) {
         console.error('[stage:join] Error:', err);
         callback?.({
