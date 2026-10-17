@@ -279,6 +279,10 @@ export interface ClientToServerEvents {
   'admin:get-questions': (
     callback?: (response: { success: boolean; questions: Question[] }) => void
   ) => void;
+  'admin:reload-default-questions': (
+    data?: { token?: string } | ((response: { success: boolean; count?: number; questions?: Question[]; error?: string }) => void),
+    callback?: (response: { success: boolean; count?: number; questions?: Question[]; error?: string }) => void
+  ) => void;
 
   // Pantalla del Auditorio / Proyector
   'stage:join': (

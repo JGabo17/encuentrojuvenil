@@ -10,49 +10,196 @@ import type {
 } from '../types/index.js';
 import type { Server } from 'socket.io';
 
-// Preguntas de ejemplo por defecto para Encuentro Juvenil
+// Banco Oficial de 20 Preguntas de Alta Dificultad (99 Preguntas Bíblicas Difíciles)
+// 10 de Selección Múltiple (MULTIPLE_CHOICE) y 10 de Defensa Oral (ORAL_DEFENSE)
 const DEFAULT_QUESTIONS = [
   {
-    text: '¿En qué libro de la Biblia se encuentra el versículo: "Porque tanto amó Dios al mundo que dio a su Hijo unigénito"?',
+    text: '¿Cuál mujer fue jueza y líder de Israel según el libro de Jueces?',
     type: 'MULTIPLE_CHOICE' as QuestionType,
-    options: JSON.stringify(['Mateo', 'Juan', 'Lucas', 'Romanos']),
+    options: JSON.stringify(['Jael', 'Débora', 'Ester', 'Rut']),
     correctOptionIndex: 1,
     points: 100,
-    timeLimit: 20,
+    timeLimit: 25,
     order: 1
   },
   {
-    text: 'Menciona los 3 personajes que fueron lanzados al horno de fuego ardiente en Babilonia y sobrevivieron.',
+    text: 'Según Daniel 1, ¿quién reinaba en Judá cuando Nabucodonosor sitió Jerusalén y qué ordenó hacer con los jóvenes nobles de Israel?',
     type: 'ORAL_DEFENSE' as QuestionType,
     options: null,
     correctOptionIndex: null,
     points: 150,
-    timeLimit: 30,
+    timeLimit: 40,
     order: 2
   },
   {
-    text: '¿Quién fue el discípulo que caminó sobre las aguas hacia Jesús antes de comenzar a hundirse por dudar?',
+    text: 'En la carta a Filemón (1:2), ¿a quién llama el apóstol Pablo «nuestro compañero de lucha»?',
     type: 'MULTIPLE_CHOICE' as QuestionType,
-    options: JSON.stringify(['Pedro', 'Santiago', 'Juan', 'Andrés']),
-    correctOptionIndex: 0,
+    options: JSON.stringify(['Apolo', 'Arquipo', 'Onésimo', 'Tíquico']),
+    correctOptionIndex: 1,
     points: 100,
-    timeLimit: 15,
+    timeLimit: 25,
     order: 3
   },
   {
-    text: 'Defiende ante el auditorio: ¿Cuál es el significado del "Fruto del Espíritu" según Gálatas y menciona al menos 4 de ellos?',
+    text: 'Durante su viaje a Atenas (Hechos 17), ¿qué le dolió en el alma a Pablo al recorrer la ciudad y ante qué concilio o tribunal fue llevado a predicar?',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 150,
+    timeLimit: 40,
+    order: 4
+  },
+  {
+    text: '¿Cuáles dos discípulos le preguntaron a Jesús si debían mandar que descendiera fuego del cielo sobre una aldea samaritana?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['Pedro y Andrés', 'Juan y Jacobo', 'Felipe y Bartolomé', 'Tomás y Mateo']),
+    correctOptionIndex: 1,
+    points: 100,
+    timeLimit: 25,
+    order: 5
+  },
+  {
+    text: '¿Cómo se llamaba el infame rey de Judá que llegó al extremo de sacrificar en el fuego a su propio hijo según 2 Reyes 16?',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 150,
+    timeLimit: 35,
+    order: 6
+  },
+  {
+    text: '¿Cuál era el nombre de la única hija que Lea dio a luz a Jacob según el Génesis?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['Zilpa', 'Bilha', 'Dina', 'Séfora']),
+    correctOptionIndex: 2,
+    points: 100,
+    timeLimit: 20,
+    order: 7
+  },
+  {
+    text: 'Menciona a qué tribu de Israel pertenecía el rey Saúl en el Antiguo Testamento y explica qué apóstol del Nuevo Testamento pertenecía a esa misma tribu.',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 150,
+    timeLimit: 40,
+    order: 8
+  },
+  {
+    text: '¿Cuáles fueron los dos creyentes propuestos para ocupar el lugar de Judas Iscariote como apóstol en Hechos 1?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['José llamado Barsabás y Matías', 'José de Arimatea y Bernabé', 'Silas y Lucas', 'Esteban y Felipe']),
+    correctOptionIndex: 0,
+    points: 100,
+    timeLimit: 25,
+    order: 9
+  },
+  {
+    text: '¿Quién era el hijo de David cuya cabellera pesaba más de dos kilos al cortarla cada año y de qué manera insólita quedó atrapado y murió?',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 150,
+    timeLimit: 40,
+    order: 10
+  },
+  {
+    text: '¿Cuál fue el nombre babilónico asignado al profeta Daniel en la corte del rey de Babilonia?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['Sadrac', 'Mesac', 'Abed-nego', 'Beltsasar']),
+    correctOptionIndex: 3,
+    points: 100,
+    timeLimit: 20,
+    order: 11
+  },
+  {
+    text: '¿Cuántos capítulos tiene el libro profético de Nahúm y contra cuál gran capital del imperio asirio fue profetizada su destrucción?',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 150,
+    timeLimit: 35,
+    order: 12
+  },
+  {
+    text: '¿Qué nombre le dio Jacob al lugar donde tuvo el sueño de la escalera al cielo con ángeles que subían y bajaban?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['Betel', 'Peniel', 'Hebrón', 'Mahanaim']),
+    correctOptionIndex: 0,
+    points: 100,
+    timeLimit: 20,
+    order: 13
+  },
+  {
+    text: 'Según Josué 14, ¿cuántos años tenía Caleb cuando reclamó la posesión del monte de Hebrón y por qué mantenía su fuerza intacta?',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 150,
+    timeLimit: 40,
+    order: 14
+  },
+  {
+    text: '¿En qué libro de la Biblia se encuentra el versículo más largo de todas las Sagradas Escrituras (versículo 8:9)?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['Salmos', 'Isaías', 'Ester', 'Ezequiel']),
+    correctOptionIndex: 2,
+    points: 100,
+    timeLimit: 20,
+    order: 15
+  },
+  {
+    text: 'En el libro de Apocalipsis capítulo 2, ¿a qué iglesia advierte Jesús por tolerar a una supuesta profetisa llamada "Jezabel" y qué prácticas promovía?',
     type: 'ORAL_DEFENSE' as QuestionType,
     options: null,
     correctOptionIndex: null,
     points: 200,
-    timeLimit: 35,
-    order: 4
+    timeLimit: 45,
+    order: 16
+  },
+  {
+    text: 'Según las cartas del apóstol Pablo en el Nuevo Testamento (Romanos 3), ¿a quiénes se referían específicamente las Escrituras con el término "gentiles"?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['A los sacerdotes del templo', 'A los pueblos y personas no judías', 'A los soldados romanos exclusivamente', 'A los saduceos']),
+    correctOptionIndex: 1,
+    points: 100,
+    timeLimit: 20,
+    order: 17
+  },
+  {
+    text: '¿En qué estado se encontraba el temido general cananeo Sísara cuando murió y quién fue la mujer valiente que lo abatió con una estaca de tienda?',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 150,
+    timeLimit: 40,
+    order: 18
+  },
+  {
+    text: 'En Hechos 17:34, ¿quiénes fueron dos de las personas prominentes de Atenas que creyeron tras escuchar a Pablo predicar en el Areópago?',
+    type: 'MULTIPLE_CHOICE' as QuestionType,
+    options: JSON.stringify(['Dionisio y Dámaris', 'Crispo y Gayo', 'Aquila y Priscila', 'Filemón y Apia']),
+    correctOptionIndex: 0,
+    points: 100,
+    timeLimit: 25,
+    order: 19
+  },
+  {
+    text: 'Al abrirse el cuarto sello en Apocalipsis 6, ¿qué jinete apareció sobre un caballo amarillo y qué poder destructor le fue otorgado sobre la tierra?',
+    type: 'ORAL_DEFENSE' as QuestionType,
+    options: null,
+    correctOptionIndex: null,
+    points: 200,
+    timeLimit: 45,
+    order: 20
   }
 ];
 
 export async function ensureDefaultQuestions(eventId: string) {
   const count = await prisma.question.count({ where: { eventId } });
-  if (count === 0) {
+  // Si no hay preguntas o solo estaban las de muestra previas, asegurar las 20 preguntas bíblicas
+  if (count < 20) {
+    await prisma.question.deleteMany({ where: { eventId } });
     for (const q of DEFAULT_QUESTIONS) {
       await prisma.question.create({
         data: {
@@ -68,6 +215,25 @@ export async function ensureDefaultQuestions(eventId: string) {
       });
     }
   }
+}
+
+export async function reloadDefaultBiblicalQuestions(eventId: string): Promise<Question[]> {
+  await prisma.question.deleteMany({ where: { eventId } });
+  for (const q of DEFAULT_QUESTIONS) {
+    await prisma.question.create({
+      data: {
+        eventId,
+        text: q.text,
+        type: q.type,
+        options: q.options,
+        correctOptionIndex: q.correctOptionIndex,
+        points: q.points,
+        timeLimit: q.timeLimit,
+        order: q.order
+      }
+    });
+  }
+  return getAllQuestions(eventId);
 }
 
 function mapToSharedQuestion(q: any): Question {

@@ -37,7 +37,8 @@ import {
 import {
   gameEngine,
   getAllQuestions,
-  createQuestion
+  createQuestion,
+  reloadDefaultBiblicalQuestions
 } from '../services/triviaService.js';
 
 import {
@@ -492,6 +493,21 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
         callback?.({ success: true, questions });
       } catch (err: any) {
         callback?.({ success: false, questions: [] });
+      }
+    });
+
+    socket.on('admin:reload-default-questions', async (...args: any[]) => {
+      const callback = typeof args[0] === 'function' ? args[0] : args[1];
+      const data = typeof args[0] === 'object' ? args[0] : undefined;
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
+      try {
+        const stageData = await getStageData();
+        const eventId = stageData.teams[0]?.eventId || 'default';
+        const questions = await reloadDefaultBiblicalQuestions(eventId);
+        io.to('room:admin').emit('admin:questions-update', questions);
+        callback?.({ success: true, count: questions.length, questions });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
       }
     });
 

@@ -277,6 +277,10 @@ export interface ClientToServerEvents {
   'admin:get-questions': (
     callback?: (response: { success: boolean; questions: Question[] }) => void
   ) => void;
+  'admin:reload-default-questions': (
+    data?: { token?: string } | ((response: { success: boolean; count?: number; questions?: Question[]; error?: string }) => void),
+    callback?: (response: { success: boolean; count?: number; questions?: Question[]; error?: string }) => void
+  ) => void;
 
   'stage:join': (
     callback?: (response: { success: boolean; data: StageData; gameState: GameState; chatEnabled?: boolean; audioState?: StageAudioState }) => void

@@ -521,6 +521,18 @@ export function AdminPage() {
     });
   };
 
+  const handleReloadDefaultQuestions = () => {
+    if (!confirm('¿Deseas cargar el banco oficial de 20 preguntas bíblicas difíciles (Scribd)? Esto actualizará la lista de preguntas.')) return;
+    socket.emit('admin:reload-default-questions', { token: getAdminToken() || undefined }, (res) => {
+      if (res?.success && res.questions) {
+        setQuestions(res.questions);
+        alert(`¡Listo! Se cargaron con éxito ${res.count || res.questions.length} preguntas bíblicas oficiales.`);
+      } else {
+        alert(res?.error || 'Error al cargar las preguntas bíblicas');
+      }
+    });
+  };
+
   // Acciones Sociales
   const handleStartPairings = () => {
     if (!confirm('¿Deseas iniciar el emparejamiento automático de duplas? Esto cruzará a los participantes de equipos diferentes.')) return;
@@ -1107,10 +1119,22 @@ export function AdminPage() {
                   </p>
                 </div>
 
-                <button type="button" onClick={() => setShowQuestionModal(true)} className="adm-btn-primary">
-                  <Plus size={15} />
-                  <span>Nueva Pregunta</span>
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={handleReloadDefaultQuestions}
+                    className="adm-btn-subtle"
+                    title="Cargar las 20 preguntas bíblicas difíciles seleccionadas"
+                    style={{ background: 'rgba(255, 90, 31, 0.12)', borderColor: 'rgba(255, 90, 31, 0.35)', color: '#ff5a1f' }}
+                  >
+                    <RotateCcw size={15} />
+                    <span>Cargar Banco Bíblico (20)</span>
+                  </button>
+                  <button type="button" onClick={() => setShowQuestionModal(true)} className="adm-btn-primary">
+                    <Plus size={15} />
+                    <span>Nueva Pregunta</span>
+                  </button>
+                </div>
               </div>
 
               <div className="adm-deck-grid">
