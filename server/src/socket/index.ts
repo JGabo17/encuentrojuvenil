@@ -396,8 +396,11 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     socket.on('admin:start-question', async (data, callback) => {
       if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
-        await gameEngine.startQuestion(data.questionId);
+        await gameEngine.startQuestion(data.questionId, data.order, data.text);
         callback?.({ success: true });
+        // Sincronizar banco de preguntas actualizado con los administradores conectados
+        const questions = await getAllQuestions();
+        io.to('room:admin').emit('admin:questions-update', questions);
       } catch (err: any) {
         callback?.({ success: false, error: err.message });
       }

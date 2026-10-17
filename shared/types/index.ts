@@ -228,7 +228,7 @@ export interface ClientToServerEvents {
 
   // Moderador / Admin Trivia Control
   'admin:start-question': (
-    data: { questionId: string; token?: string },
+    data: { questionId: string; order?: number; text?: string; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:start-countdown': (
@@ -409,6 +409,7 @@ export interface ServerToClientEvents {
   'admin:participant-joined': (participant: Participant) => void;
   'admin:participant-status': (data: { participantId: string; isConnected: boolean }) => void;
   'admin:message-logged': (log: MessageLog) => void;
+  'admin:questions-update': (questions: Question[]) => void;
 
   // General
   'system:error': (data: { message: string }) => void;

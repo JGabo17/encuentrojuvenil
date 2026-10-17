@@ -176,10 +176,40 @@ class GameEngine {
   }
 
   // 1. Iniciar Pregunta en Fase de Lectura previa (Pantallas muestran pregunta y opciones, buzzer bloqueado)
-  public async startQuestion(questionId: string) {
+  public async startQuestion(questionId: string, order?: number, text?: string) {
     this.clearTimer();
 
-    const q = await prisma.question.findUnique({ where: { id: questionId } });
+    let q = await prisma.question.findUnique({ where: { id: questionId } });
+
+    // Fallback de resiliencia: si el servidor se reinició o desplegó y cambiaron los UUIDs,
+    // o el cliente tiene una lista desincronizada en memoria:
+    if (!q) {
+      const activeEvent = await getOrCreateActiveEvent();
+      await ensureDefaultQuestions(activeEvent.id);
+
+      const all = await prisma.question.findMany({
+        where: { eventId: activeEvent.id },
+        orderBy: { order: 'asc' }
+      });
+
+      if (text && text.trim()) {
+        const cleanText = text.trim().toLowerCase();
+        q = all.find((item) => item.text.trim().toLowerCase() === cleanText) || null;
+      }
+
+      if (!q && typeof order === 'number') {
+        q = all.find((item) => item.order === order) || null;
+      }
+
+      if (!q) {
+        q = all.find((item) => String(item.order) === String(questionId)) || null;
+      }
+
+      if (!q && all.length > 0) {
+        q = all[0];
+      }
+    }
+
     if (!q) throw new Error('Pregunta no encontrada.');
 
     const question = mapToSharedQuestion(q);

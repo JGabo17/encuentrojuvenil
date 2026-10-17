@@ -199,6 +199,23 @@ export function AdminPage() {
         (socket.auth as any) = { token };
         socket.emit('admin:join', { token });
       }
+
+      // Re-sincronizar siempre estado, banco de preguntas y equipos al reconectar
+      socket.emit('admin:get-questions', (res) => {
+        if (res?.success && res.questions) setQuestions(res.questions);
+      });
+      socket.emit('game:get-state', (res) => {
+        if (res?.state) setGameState(res.state);
+      });
+      socket.emit('teams:get', (res) => {
+        if (res?.success && res.teams) setTeams(res.teams);
+      });
+      socket.emit('admin:get-wall', { token: getAdminToken() || undefined }, (res) => {
+        if (res?.success) {
+          setWallEnabled(res.enabled);
+          setWallItems(res.messages);
+        }
+      });
     }
 
     socket.on('connect', onSocketConnect);
@@ -263,6 +280,10 @@ export function AdminPage() {
       setWallItems(data.messages);
     }
 
+    function onQuestionsUpdate(list: Question[]) {
+      setQuestions(list);
+    }
+
     socket.on('admin:participants-update', onParticipantsUpdate);
     socket.on('teams:update', onTeamsUpdate);
     socket.on('admin:participant-joined', onParticipantJoined);
@@ -275,6 +296,7 @@ export function AdminPage() {
     socket.on('admin:moderation-queue-update', onModerationQueueUpdate);
     socket.on('chat:status-change', onChatStatusChange);
     socket.on('admin:wall-update', onWallUpdate);
+    socket.on('admin:questions-update', onQuestionsUpdate);
 
     return () => {
       socket.off('connect', onSocketConnect);
@@ -290,6 +312,7 @@ export function AdminPage() {
       socket.off('admin:moderation-queue-update', onModerationQueueUpdate);
       socket.off('chat:status-change', onChatStatusChange);
       socket.off('admin:wall-update', onWallUpdate);
+      socket.off('admin:questions-update', onQuestionsUpdate);
     };
   }, [isAuthenticated]);
 
@@ -391,9 +414,12 @@ export function AdminPage() {
   };
 
   // Acciones de Trivia & Moderación en Vivo
-  const handleStartQuestion = (questionId: string) => {
-    socket.emit('admin:start-question', { questionId, token: getAdminToken() || undefined }, (res) => {
+  const handleStartQuestion = (questionId: string, order?: number, text?: string) => {
+    socket.emit('admin:start-question', { questionId, order, text, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
+        socket.emit('admin:get-questions', (qRes) => {
+          if (qRes?.success && qRes.questions) setQuestions(qRes.questions);
+        });
         alert(res?.error || 'Error al lanzar la pregunta');
       }
     });
@@ -1062,7 +1088,7 @@ export function AdminPage() {
 
                       <button
                         type="button"
-                        onClick={() => handleStartQuestion(q.id)}
+                        onClick={() => handleStartQuestion(q.id, q.order, q.text)}
                         disabled={isActive}
                         className={`adm-btn-launch ${isActive ? 'active' : ''}`}
                       >
