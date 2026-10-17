@@ -43,7 +43,8 @@ import {
   Music,
   Volume2,
   VolumeX,
-  Pause
+  Pause,
+  Tv
 } from 'lucide-react';
 import type {
   Participant,
@@ -56,7 +57,8 @@ import type {
   ChatMessageItem,
   Team,
   WallModerationItem,
-  StageAudioState
+  StageAudioState,
+  StageViewMode
 } from '../../../shared/types/index.js';
 import '../styles/admin.css';
 
@@ -107,6 +109,9 @@ export function AdminPage() {
     muted: false,
     trackTitle: 'Cambiaré Mis Tristezas / Eres Fiel'
   });
+
+  // Control remoto de proyección del Stage (Auditorio)
+  const [stageViewMode, setStageViewMode] = useState<StageViewMode>('auto');
 
   // Estados de Trivia y Buzzer (Fase 2)
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -189,6 +194,11 @@ export function AdminPage() {
     // Cargar estado inicial del juego
     socket.emit('game:get-state', (res) => {
       if (res?.state) setGameState(res.state);
+    });
+
+    // Cargar modo de proyección activo del Stage (/stage)
+    socket.emit('admin:get-stage-view', (res) => {
+      if (res?.success && res.mode) setStageViewMode(res.mode);
     });
 
     // Cargar equipos con PINs
@@ -319,6 +329,11 @@ export function AdminPage() {
     socket.on('admin:questions-update', onQuestionsUpdate);
     socket.on('stage:audio-update', onStageAudioUpdate);
 
+    function onStageViewChange({ mode }: { mode: StageViewMode }) {
+      if (mode) setStageViewMode(mode);
+    }
+    socket.on('stage:view-change', onStageViewChange);
+
     return () => {
       socket.off('connect', onSocketConnect);
       socket.off('admin:participants-update', onParticipantsUpdate);
@@ -335,6 +350,7 @@ export function AdminPage() {
       socket.off('admin:wall-update', onWallUpdate);
       socket.off('admin:questions-update', onQuestionsUpdate);
       socket.off('stage:audio-update', onStageAudioUpdate);
+      socket.off('stage:view-change', onStageViewChange);
     };
   }, [isAuthenticated]);
 
@@ -620,6 +636,15 @@ export function AdminPage() {
     });
   };
 
+  // Control remoto de la vista del Stage (Auditorio)
+  const handleSetStageView = (mode: StageViewMode) => {
+    socket.emit('admin:set-stage-view', { mode, token: getAdminToken() || undefined }, (res) => {
+      if (res?.success && res.mode) {
+        setStageViewMode(res.mode);
+      }
+    });
+  };
+
   // Contingencias
   const handleReboundQuestion = (seconds = 15) => {
     socket.emit('admin:rebound-question', { seconds, token: getAdminToken() || undefined }, (res) => {
@@ -774,6 +799,25 @@ export function AdminPage() {
             >
               {stageAudio.playing ? <Volume2 size={14} /> : <VolumeX size={14} />}
               <span>{stageAudio.playing ? 'Audio: En vivo' : 'Audio: Pausado'}</span>
+            </button>
+
+            {/* Control rápido de Proyección en Stage */}
+            <button
+              type="button"
+              onClick={() => handleSetStageView(stageViewMode === 'mural' ? 'auto' : 'mural')}
+              className={stageViewMode === 'mural' ? 'adm-btn-primary' : 'adm-btn-subtle'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderColor: stageViewMode === 'mural' ? 'var(--primary)' : undefined,
+                background: stageViewMode === 'mural' ? 'rgba(255, 90, 31, 0.18)' : undefined,
+                color: stageViewMode === 'mural' ? 'var(--primary)' : undefined
+              }}
+              title={stageViewMode === 'mural' ? 'Auditorio proyectando Mural. Clic para volver a Trivia En Vivo.' : 'Clic para proyectar el Mural 3D en el Auditorio (/stage)'}
+            >
+              <Tv size={14} />
+              <span>{stageViewMode === 'mural' ? 'Mural Proyectado' : 'Proyectar Mural'}</span>
             </button>
 
             <button type="button" onClick={() => setShowQrModal(true)} className="adm-btn-subtle">
@@ -1326,6 +1370,130 @@ export function AdminPage() {
                 >
                   {chatEnabled ? 'Pausar Chat' : 'Habilitar Chat'}
                 </button>
+              </div>
+            </div>
+
+            {/* Consola de Control de Proyección del Stage (Auditorio) */}
+            <div
+              className="adm-panel-card"
+              style={{
+                padding: '18px 20px',
+                borderLeft: '4px solid #3b82f6',
+                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(18, 20, 23, 0.95) 100%)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '8px',
+                      background: stageViewMode === 'mural' ? 'rgba(255, 90, 31, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+                      border: `1px solid ${stageViewMode === 'mural' ? 'var(--primary)' : 'rgba(59, 130, 246, 0.3)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: stageViewMode === 'mural' ? 'var(--primary)' : '#60a5fa',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Tv size={22} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+                        Proyección en Auditorio (/stage)
+                      </h3>
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: stageViewMode === 'mural' ? 'rgba(255, 90, 31, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                          color: stageViewMode === 'mural' ? 'var(--primary)' : '#60a5fa',
+                          border: `1px solid ${stageViewMode === 'mural' ? 'rgba(255, 90, 31, 0.4)' : 'rgba(59, 130, 246, 0.4)'}`
+                        }}
+                      >
+                        {stageViewMode === 'mural'
+                          ? '● Proyectando Mural 3D'
+                          : stageViewMode === 'lobby'
+                          ? '● Proyectando Sala QR'
+                          : stageViewMode === 'leaderboard'
+                          ? '● Proyectando Clasificación'
+                          : '● Modo En Vivo (Auto)'}
+                      </span>
+                    </div>
+                    <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-dim)' }}>
+                      Controla en tiempo real qué se proyecta en la pantalla gigante del auditorio.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSetStageView('mural')}
+                    className={stageViewMode === 'mural' ? 'adm-btn-primary' : 'adm-btn-subtle'}
+                    style={{
+                      padding: '8px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: stageViewMode === 'mural' ? '0 0 16px rgba(255, 90, 31, 0.4)' : undefined
+                    }}
+                    title="Proyectar el mural de integración 3D y muro de mensajes en vivo"
+                  >
+                    <Camera size={15} />
+                    <span>Proyectar Mural 3D</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSetStageView('auto')}
+                    className={stageViewMode === 'auto' ? 'adm-btn-primary' : 'adm-btn-subtle'}
+                    style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Modo automático: Sigue las preguntas, temporizadores y resultados de trivia"
+                  >
+                    <Gamepad2 size={15} />
+                    <span>En Vivo (Auto)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSetStageView('lobby')}
+                    className={stageViewMode === 'lobby' ? 'adm-btn-primary' : 'adm-btn-subtle'}
+                    style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Proyectar la sala de bienvenida con código QR de acceso"
+                  >
+                    <QrCode size={15} />
+                    <span>Sala QR</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSetStageView('leaderboard')}
+                    className={stageViewMode === 'leaderboard' ? 'adm-btn-primary' : 'adm-btn-subtle'}
+                    style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Proyectar podio y tabla general de posiciones"
+                  >
+                    <Trophy size={15} />
+                    <span>Clasificación</span>
+                  </button>
+
+                  <a
+                    href="/stage"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="adm-btn-subtle"
+                    style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                    title="Abrir la pantalla del auditorio en otra pestaña"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Abrir Stage</span>
+                  </a>
+                </div>
               </div>
             </div>
 

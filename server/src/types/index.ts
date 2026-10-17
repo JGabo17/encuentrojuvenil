@@ -3,6 +3,7 @@
 export type RecipientType = 'ALL' | 'PARTICIPANT';
 export type ParticipantRole = 'CAPTAIN' | 'MEMBER';
 export type QuestionType = 'ORAL_DEFENSE' | 'MULTIPLE_CHOICE';
+export type StageViewMode = 'auto' | 'lobby' | 'leaderboard' | 'mural';
 
 export type GameStatus =
   | 'LOBBY'           // Sala de espera
@@ -283,7 +284,14 @@ export interface ClientToServerEvents {
   ) => void;
 
   'stage:join': (
-    callback?: (response: { success: boolean; data: StageData; gameState: GameState; chatEnabled?: boolean; audioState?: StageAudioState }) => void
+    callback?: (response: { success: boolean; data: StageData; gameState: GameState; chatEnabled?: boolean; audioState?: StageAudioState; viewMode?: StageViewMode }) => void
+  ) => void;
+  'admin:set-stage-view': (
+    data: { mode: StageViewMode; token?: string },
+    callback?: (response: { success: boolean; mode?: StageViewMode; error?: string }) => void
+  ) => void;
+  'admin:get-stage-view': (
+    callback?: (response: { success: boolean; mode: StageViewMode }) => void
   ) => void;
 
   'admin:join': (
@@ -430,6 +438,7 @@ export interface ServerToClientEvents {
   'admin:message-logged': (log: MessageLog) => void;
   'admin:questions-update': (questions: Question[]) => void;
   'stage:audio-update': (state: StageAudioState) => void;
+  'stage:view-change': (data: { mode: StageViewMode }) => void;
 
   'system:error': (data: { message: string }) => void;
   'server:pong': (data: { message: string; timestamp: string }) => void;

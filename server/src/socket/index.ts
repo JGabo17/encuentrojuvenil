@@ -22,7 +22,7 @@ import {
   sendMessageSchema,
   templateSchema
 } from '../utils/validators.js';
-import type { ClientToServerEvents, ServerToClientEvents, LiveMessagePayload, StageAudioState } from '../types/index.js';
+import type { ClientToServerEvents, ServerToClientEvents, LiveMessagePayload, StageAudioState, StageViewMode } from '../types/index.js';
 
 import {
   createTeamWithCaptain,
@@ -80,6 +80,9 @@ let stageAudioState: StageAudioState = {
   muted: false,
   trackTitle: 'Cambiaré Mis Tristezas / Eres Fiel'
 };
+
+// Modo de proyección activo en la pantalla del Stage (Auditorio)
+let currentStageViewMode: StageViewMode = 'auto';
 
 function checkIsAdmin(socket: Socket<any, any, any, SocketData>, tokenOrData?: any): boolean {
   if (socket.data.isAdmin) return true;
@@ -351,7 +354,8 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
           data,
           gameState,
           chatEnabled: isChatEnabled(),
-          audioState: stageAudioState
+          audioState: stageAudioState,
+          viewMode: currentStageViewMode
         });
       } catch (err: any) {
         console.error('[stage:join] Error:', err);
@@ -411,6 +415,11 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     socket.on('admin:start-question', async (data, callback) => {
       if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
+        if (currentStageViewMode !== 'auto') {
+          currentStageViewMode = 'auto';
+          io.to('room:stage').emit('stage:view-change', { mode: 'auto' });
+          io.to('room:admin').emit('stage:view-change', { mode: 'auto' });
+        }
         await gameEngine.startQuestion(data.questionId, data.order, data.text);
         callback?.({ success: true });
         // Sincronizar banco de preguntas actualizado con los administradores conectados
@@ -600,6 +609,21 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       io.to('room:admin').emit('stage:audio-update', stageAudioState);
 
       callback?.({ success: true, audioState: stageAudioState });
+    });
+
+    // Control remoto del modo de proyección del Stage (/stage) desde el Admin
+    socket.on('admin:get-stage-view', async (callback) => {
+      callback?.({ success: true, mode: currentStageViewMode });
+    });
+
+    socket.on('admin:set-stage-view', async (data, callback) => {
+      if (!checkIsAdmin(socket, data)) {
+        return callback?.({ success: false, mode: currentStageViewMode, error: 'No autorizado' });
+      }
+      currentStageViewMode = data.mode || 'auto';
+      io.to('room:stage').emit('stage:view-change', { mode: currentStageViewMode });
+      io.to('room:admin').emit('stage:view-change', { mode: currentStageViewMode });
+      callback?.({ success: true, mode: currentStageViewMode });
     });
 
     socket.on('admin:get-moderation-queue', async (...args: any[]) => {

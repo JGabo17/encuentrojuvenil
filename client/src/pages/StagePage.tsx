@@ -86,6 +86,7 @@ export function StagePage() {
           if (res.data.muralPhotos) setMuralPhotos(res.data.muralPhotos);
           if (res.gameState) setGameState(res.gameState);
           if (res.audioState) setRemoteAudio(res.audioState);
+          if ((res as any).viewMode) setStageViewMode((res as any).viewMode);
         }
       });
       socket.emit('stage:get-wall', (res) => {
@@ -104,6 +105,9 @@ export function StagePage() {
     socket.on('disconnect', () => setIsConnected(false));
     socket.on('stage:update', (data: StageData) => {
       setStageData(data);
+    });
+    socket.on('stage:view-change', ({ mode }: { mode: any }) => {
+      if (mode) setStageViewMode(mode);
     });
 
     socket.on('game:state-update', (state: GameState) => {
@@ -165,6 +169,7 @@ export function StagePage() {
       socket.off('connect', registerStage);
       socket.off('disconnect');
       socket.off('stage:update');
+      socket.off('stage:view-change');
       socket.off('game:state-update');
       socket.off('game:timer-tick');
       socket.off('game:countdown-tick');
