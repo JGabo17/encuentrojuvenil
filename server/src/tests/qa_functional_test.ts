@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 
-const BASE_URL = 'http://localhost:4000';
+const BASE_URL = process.env.TEST_URL || 'https://encuentro-juvenil.onrender.com';
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -8,9 +8,10 @@ function wait(ms: number) {
 
 function createClientSocket(): Socket {
   return io(BASE_URL, {
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     forceNew: true,
-    reconnection: false
+    reconnection: false,
+    timeout: 12000
   });
 }
 
@@ -108,6 +109,25 @@ async function main() {
         stageSocket.emit('stage:join', resolve);
       });
       if (!stageRes?.success) throw new Error('stage:join falló');
+    });
+
+    await runStep('1.3b Prevención de Participantes Fantasmas con sesión expirada/inexistente', async () => {
+      const ghostSocket = createClientSocket();
+      await new Promise<void>((res) => ghostSocket.on('connect', () => res()));
+
+      const ghostRes = await new Promise<any>((resolve) => {
+        ghostSocket.emit(
+          'participant:join',
+          { name: 'GhostLeo', sessionToken: 'uuid-invalido-de-prueba-expirado-99999' },
+          resolve
+        );
+      });
+      ghostSocket.disconnect();
+
+      // Debe ser rechazado para que el cliente limpie su localStorage y no cree registros duplicados
+      if (ghostRes?.success) {
+        throw new Error('El servidor aceptó un sessionToken inválido y creó un participante fantasma');
+      }
     });
 
     // 3. Creación de Equipos por Capitanes
@@ -219,6 +239,23 @@ async function main() {
     });
 
     await runStep('2.3 Concurrencia Milimétrica de Buzzer: Ambos capitanes pulsan al mismo instante', async () => {
+      const countRes = await new Promise<any>((resolve) => {
+        adminSocket.emit('admin:start-countdown', { countdownSeconds: 1 }, resolve);
+      });
+      if (!countRes?.success) throw new Error(`start-countdown falló: ${countRes?.error}`);
+
+      // Esperar a que la cuenta regresiva finalice y active el buzzer (QUESTION_ACTIVE)
+      await new Promise<void>((resolve) => {
+        const onState = (state: any) => {
+          if (state?.status === 'QUESTION_ACTIVE') {
+            adminSocket.off('game:state-update', onState);
+            resolve();
+          }
+        };
+        adminSocket.on('game:state-update', onState);
+        setTimeout(resolve, 2200);
+      });
+
       const [buzz1, buzz2] = await Promise.all([
         new Promise<any>((res) => cap1Socket.emit('captain:buzz', res)),
         new Promise<any>((res) => cap2Socket.emit('captain:buzz', res))
@@ -262,6 +299,22 @@ async function main() {
         adminSocket.emit('admin:show-leaderboard', resolve);
       });
       if (!podRes?.success) throw new Error('admin:show-leaderboard falló');
+    });
+
+    await runStep('2.8 Lanzamiento Resiliente de Preguntas (sin fallo por UUID efímero)', async () => {
+      const resilientRes = await new Promise<any>((resolve) => {
+        adminSocket.emit('admin:start-question', {
+          questionId: 'uuid-inexistente-post-reinicio',
+          order: 1,
+          text: '¿En qué libro de la Biblia'
+        }, resolve);
+      });
+      if (!resilientRes?.success) {
+        throw new Error(`Lanzamiento resiliente falló: ${resilientRes?.error}`);
+      }
+
+      // Volver a sala de espera
+      await new Promise<any>((resolve) => adminSocket.emit('admin:reset-to-lobby', resolve));
     });
 
     // 7. Encuentro e Integración (Fase 3)
@@ -318,6 +371,46 @@ async function main() {
 
       // Reanudar chat
       await new Promise<any>((res) => adminSocket.emit('admin:toggle-chat', { enabled: true }, res));
+    });
+
+    await runStep('3.5 Control Remoto de Audio del Auditorio (/stage) desde Admin', async () => {
+      // Escuchar eventos en el socket del Stage
+      let lastAudioState: any = null;
+      stageSocket.on('stage:audio-update', (state) => {
+        lastAudioState = state;
+      });
+
+      // 1. Play en Stage
+      await new Promise<any>((res) => adminSocket.emit('admin:set-stage-audio', { action: 'play' }, res));
+      await wait(300);
+      if (!lastAudioState?.playing) throw new Error('El stage no recibió la orden de PLAY de audio');
+
+      // 2. Ajuste de Volumen al 85%
+      await new Promise<any>((res) => adminSocket.emit('admin:set-stage-audio', { action: 'set-volume', volume: 0.85 }, res));
+      await wait(300);
+      if (lastAudioState?.volume !== 0.85) throw new Error(`Volumen no actualizado a 0.85 (actual: ${lastAudioState?.volume})`);
+
+      // 3. Reinicio de pista (seekTime)
+      await new Promise<any>((res) => adminSocket.emit('admin:set-stage-audio', { action: 'restart' }, res));
+      await wait(300);
+      if (!lastAudioState?.seekTime) throw new Error('El stage no recibió la orden de RESTART (seekTime)');
+
+      // 4. Mute
+      await new Promise<any>((res) => adminSocket.emit('admin:set-stage-audio', { action: 'toggle-mute' }, res));
+      await wait(300);
+      if (!lastAudioState?.muted) throw new Error('El stage no recibió la orden de MUTE');
+
+      // 5. Pausa
+      await new Promise<any>((res) => adminSocket.emit('admin:set-stage-audio', { action: 'pause' }, res));
+      await wait(300);
+      if (lastAudioState?.playing) throw new Error('El stage no recibió la orden de PAUSE');
+    });
+
+    await runStep('3.6 Disponibilidad del archivo estático de audio en servidor', async () => {
+      const audioRes = await fetch(`${BASE_URL}/audio/mural_track.mp3`, { method: 'HEAD' });
+      if (!audioRes.ok) throw new Error(`El archivo de audio respondió HTTP ${audioRes.status}`);
+      const contentLength = Number(audioRes.headers.get('content-length') || '0');
+      if (contentLength < 1000000) throw new Error(`Tamaño de audio sospechosamente bajo (${contentLength} bytes)`);
     });
 
     // 8. Contingencias y Superpoderes de Admin
