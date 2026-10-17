@@ -13,8 +13,12 @@ export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
   timeout: 15000,
   transports: ['websocket', 'polling'],
   auth: (cb) => {
-    const adminToken = localStorage.getItem('encuentro_admin_token') || sessionStorage.getItem('encuentro_admin_token');
-    const sessionToken = localStorage.getItem('encuentro_session_token');
+    let adminToken: string | null = null;
+    let sessionToken: string | null = null;
+    try {
+      adminToken = localStorage.getItem('encuentro_admin_token') || sessionStorage.getItem('encuentro_admin_token');
+      sessionToken = localStorage.getItem('encuentro_session_token');
+    } catch (e) {}
     cb({
       token: adminToken || undefined,
       sessionToken: sessionToken || undefined

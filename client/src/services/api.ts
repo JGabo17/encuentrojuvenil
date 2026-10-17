@@ -15,15 +15,25 @@ export async function fetchStageData(): Promise<StageData> {
 }
 
 export function getAdminToken(): string | null {
-  return localStorage.getItem('encuentro_admin_token');
+  try {
+    return localStorage.getItem('encuentro_admin_token') || sessionStorage.getItem('encuentro_admin_token');
+  } catch (e) {
+    return null;
+  }
 }
 
 export function setAdminToken(token: string) {
-  localStorage.setItem('encuentro_admin_token', token);
+  try {
+    localStorage.setItem('encuentro_admin_token', token);
+    sessionStorage.setItem('encuentro_admin_token', token);
+  } catch (e) {}
 }
 
 export function removeAdminToken() {
-  localStorage.removeItem('encuentro_admin_token');
+  try {
+    localStorage.removeItem('encuentro_admin_token');
+    sessionStorage.removeItem('encuentro_admin_token');
+  } catch (e) {}
 }
 
 export async function loginAdmin(username: string, password: string): Promise<{ token: string; user: any }> {
