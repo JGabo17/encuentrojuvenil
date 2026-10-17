@@ -62,9 +62,45 @@ interface SocketData {
   role?: string;
 }
 
+function checkIsAdmin(socket: Socket<any, any, any, SocketData>, tokenOrData?: any): boolean {
+  if (socket.data.isAdmin) return true;
+  const token =
+    (typeof tokenOrData === 'string' ? tokenOrData : tokenOrData?.token) ||
+    (socket.handshake.auth as any)?.token ||
+    (socket.handshake.headers as any)?.authorization?.replace('Bearer ', '');
+  if (token) {
+    try {
+      const payload = verifyAdminToken(token);
+      if (payload && payload.role === 'ADMIN') {
+        socket.data.isAdmin = true;
+        socket.join('room:admin');
+        return true;
+      }
+    } catch (e) {}
+  }
+  return false;
+}
+
 export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>) {
   // Inicializar servidor de socket en el motor de juego
   gameEngine.setSocketServer(io);
+
+  // Middleware de autenticación de admin en conexión handshake
+  io.use((socket, next) => {
+    try {
+      const token =
+        (socket.handshake.auth as any)?.token ||
+        (socket.handshake.headers as any)?.authorization?.replace('Bearer ', '');
+      if (token) {
+        const payload = verifyAdminToken(token);
+        if (payload && payload.role === 'ADMIN') {
+          socket.data.isAdmin = true;
+          socket.join('room:admin');
+        }
+      }
+    } catch (e) {}
+    next();
+  });
 
   io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>) => {
     // ----------------------------------------------------
@@ -333,7 +369,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     // Fase 2: Moderador / Admin Trivia Control
     // ----------------------------------------------------
     socket.on('admin:start-question', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         await gameEngine.startQuestion(data.questionId);
         callback?.({ success: true });
@@ -343,7 +379,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     socket.on('admin:start-countdown', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         gameEngine.startCountdown(data?.countdownSeconds || 7);
         callback?.({ success: true });
@@ -352,8 +388,10 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       }
     });
 
-    socket.on('admin:cancel-question', async (callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+    socket.on('admin:cancel-question', async (...args: any[]) => {
+      const callback = typeof args[0] === 'function' ? args[0] : args[1];
+      const data = typeof args[0] === 'object' ? args[0] : undefined;
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         gameEngine.cancelQuestion();
         callback?.({ success: true });
@@ -363,7 +401,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     socket.on('admin:grade-defense', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         await gameEngine.gradeOralDefense(data.grade);
         callback?.({ success: true });
@@ -372,8 +410,10 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       }
     });
 
-    socket.on('admin:show-leaderboard', async (callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false });
+    socket.on('admin:show-leaderboard', async (...args: any[]) => {
+      const callback = typeof args[0] === 'function' ? args[0] : args[1];
+      const data = typeof args[0] === 'object' ? args[0] : undefined;
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false });
       try {
         await gameEngine.showLeaderboard();
         callback?.({ success: true });
@@ -382,8 +422,10 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       }
     });
 
-    socket.on('admin:reset-to-lobby', async (callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false });
+    socket.on('admin:reset-to-lobby', async (...args: any[]) => {
+      const callback = typeof args[0] === 'function' ? args[0] : args[1];
+      const data = typeof args[0] === 'object' ? args[0] : undefined;
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false });
       try {
         gameEngine.resetToLobby();
         callback?.({ success: true });
@@ -393,7 +435,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     socket.on('admin:create-question', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         const question = await createQuestion(data);
         callback?.({ success: true, question });
@@ -414,8 +456,10 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     // ----------------------------------------------------
     // Fase 3: Encuentro e Integración (Chat en duplas & Mural social)
     // ----------------------------------------------------
-    socket.on('admin:start-pairings', async (callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+    socket.on('admin:start-pairings', async (...args: any[]) => {
+      const callback = typeof args[0] === 'function' ? args[0] : args[1];
+      const data = typeof args[0] === 'object' ? args[0] : undefined;
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         const stageData = await getStageData();
         const eventId = stageData.teams[0]?.eventId || 'default';
@@ -445,7 +489,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     socket.on('admin:toggle-chat', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, chatEnabled: isChatEnabled() });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, chatEnabled: isChatEnabled() });
       try {
         const updated = setChatEnabled(data.enabled);
         io.emit('chat:status-change', { chatEnabled: updated });
@@ -455,7 +499,10 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       }
     });
 
-    socket.on('admin:get-moderation-queue', async (callback) => {
+    socket.on('admin:get-moderation-queue', async (...args: any[]) => {
+      const callback = typeof args[0] === 'function' ? args[0] : args[1];
+      const data = typeof args[0] === 'object' ? args[0] : undefined;
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, queue: [] });
       try {
         const stageData = await getStageData();
         const eventId = stageData.teams[0]?.eventId || 'default';
@@ -467,7 +514,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     socket.on('admin:moderate-photo', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false });
       try {
         await moderateChatMessagePhoto(data.messageId, data.approved);
         const stageData = await getStageData();
@@ -614,7 +661,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     // ----------------------------------------------------
     socket.on('admin:send-message', async (data, callback) => {
       try {
-        if (!socket.data.isAdmin) {
+        if (!checkIsAdmin(socket, data)) {
           callback?.({ success: false, error: 'No autorizado para enviar mensajes' });
           return;
         }
@@ -702,7 +749,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     // Administrador: Gestión de Plantillas por Socket
     // ----------------------------------------------------
     socket.on('admin:create-template', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       const parsed = templateSchema.safeParse(data);
       if (!parsed.success) return callback?.({ success: false, error: parsed.error.errors[0]?.message });
       try {
@@ -714,7 +761,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     socket.on('admin:update-template', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       const parsed = templateSchema.safeParse({ name: data.name, content: data.content });
       if (!parsed.success) return callback?.({ success: false, error: parsed.error.errors[0]?.message });
       try {
@@ -726,7 +773,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
     });
 
     socket.on('admin:delete-template', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         await deleteTemplate(data.id);
         callback?.({ success: true });
@@ -741,7 +788,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
 
     // 1. Rebotar Pregunta al Auditorio
     socket.on('admin:rebound-question', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         gameEngine.reboundQuestion(data?.seconds || 15);
         callback?.({ success: true });
@@ -752,7 +799,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
 
     // 2. Ajuste Manual de Puntos a un Equipo (+/- Pts)
     socket.on('admin:adjust-team-points', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         await adjustTeamScore(data.teamId, data.deltaPoints);
 
@@ -775,7 +822,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
 
     // 3. Expulsar Participante Troll o Duplicado
     socket.on('admin:kick-participant', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         const kicked = await kickParticipant(data.participantId);
         if (kicked) {
@@ -805,7 +852,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
 
     // 4. Transferir Capitanía (en caso de batería baja o reconexión fallida)
     socket.on('admin:transfer-captain', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       try {
         await transferCaptaincy(data.teamId, data.newCaptainId);
 
@@ -838,7 +885,7 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
 
     // 5. Botón de Reseteo Maestro del Evento (Doble check con texto 'RESET')
     socket.on('admin:reset-event', async (data, callback) => {
-      if (!socket.data.isAdmin) return callback?.({ success: false, error: 'No autorizado' });
+      if (!checkIsAdmin(socket, data)) return callback?.({ success: false, error: 'No autorizado' });
       if (data.confirmText !== 'RESET') {
         return callback?.({ success: false, error: 'Debes escribir exactamente "RESET" para confirmar el reinicio.' });
       }

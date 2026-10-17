@@ -9,8 +9,15 @@ export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
   reconnectionAttempts: 50,
   reconnectionDelay: 800,
   reconnectionDelayMax: 4000,
-  randomizationFactor: 0.5, // Dispersa reconexiones entre 400ms y 1200ms para evitar thundering herd
+  randomizationFactor: 0.5,
   timeout: 15000,
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  auth: (cb) => {
+    const adminToken = localStorage.getItem('encuentro_admin_token') || sessionStorage.getItem('encuentro_admin_token');
+    const sessionToken = localStorage.getItem('encuentro_session_token');
+    cb({
+      token: adminToken || undefined,
+      sessionToken: sessionToken || undefined
+    });
+  }
 });
-

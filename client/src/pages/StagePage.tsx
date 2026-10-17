@@ -6,7 +6,7 @@ import { TeamAvatar } from '../components/TeamAvatar';
 import { CircularCarousel } from '../components/CircularCarousel';
 import confetti from 'canvas-confetti';
 import type { StageData, Team, GameState, GameStatus, MuralPhotoItem } from '../../../shared/types/index.js';
-import { Maximize, Minimize, Trophy, Camera } from 'lucide-react';
+import { Maximize, Minimize, Trophy, Camera, Radio, QrCode } from 'lucide-react';
 import '../styles/stage.css';
 
 const PUBLIC_URL_FALLBACK = 'https://encuentro-juvenil.onrender.com';
@@ -45,8 +45,8 @@ export function StagePage() {
   const [isConnected, setIsConnected] = useState(socket.connected);
   const [clock, setClock] = useState(() => new Date());
 
-  // Mural social de fotografías
-  const [stageViewMode, setStageViewMode] = useState<'game' | 'mural'>('game');
+  // Control de vista del operador: 'auto' (sigue al moderador), 'lobby' (fuerza QR y sala de espera), 'leaderboard' (fuerza podio), 'mural' (fuerza mural de fotos)
+  const [stageViewMode, setStageViewMode] = useState<'auto' | 'lobby' | 'leaderboard' | 'mural'>('auto');
   const [muralPhotos, setMuralPhotos] = useState<MuralPhotoItem[]>([]);
 
   // Controles del operador: se ocultan solos para no ensuciar la proyección
@@ -133,9 +133,11 @@ export function StagePage() {
     return () => clearInterval(id);
   }, []);
 
-  // Si arranca una pregunta mientras se proyecta el mural, volvemos al juego automáticamente
+  // Si arranca una pregunta mientras se proyecta otra cosa, volvemos al juego en vivo automáticamente
   useEffect(() => {
-    if (gameState.status !== 'LOBBY') setStageViewMode('game');
+    if (gameState.status !== 'LOBBY' && gameState.status !== 'LEADERBOARD') {
+      setStageViewMode('auto');
+    }
   }, [gameState.status]);
 
   // Mostrar controles al mover el mouse y ocultarlos a los 2.5 s
@@ -173,11 +175,15 @@ export function StagePage() {
   const maxScore = Math.max(1, ...rankedTeams.map((t) => t.score || 0));
 
   const isMural = stageViewMode === 'mural';
+  const isForcedLobby = stageViewMode === 'lobby';
+  const isForcedLeaderboard = stageViewMode === 'leaderboard';
   const status = gameState.status;
   const question = gameState.currentQuestion;
-  const phase = isMural ? { tag: 'Mural', title: 'Mural de integración' } : PHASE_LABELS[status];
+
   const isQuestionPhase =
     !isMural &&
+    !isForcedLobby &&
+    !isForcedLeaderboard &&
     !!question &&
     (status === 'QUESTION_READING' ||
       status === 'COUNTDOWN_ACTIVE' ||
@@ -185,7 +191,18 @@ export function StagePage() {
       status === 'BUZZER_LOCKED' ||
       status === 'EVALUATING' ||
       status === 'SHOWING_RESULT');
-  const showTicker = rankedTeams.length > 0 && (isMural || status !== 'LOBBY');
+
+  const showLobby = !isMural && !isForcedLeaderboard && (isForcedLobby || (!isQuestionPhase && status === 'LOBBY'));
+
+  const phase = isMural
+    ? { tag: 'Mural', title: 'Mural de integración' }
+    : isForcedLobby
+    ? { tag: 'Sala de espera', title: 'Registro de equipos y bienvenida' }
+    : isForcedLeaderboard
+    ? { tag: 'Clasificación', title: 'Tabla general de puntos' }
+    : PHASE_LABELS[status] || { tag: 'Encuentro', title: 'Transmisión' };
+
+  const showTicker = rankedTeams.length > 0 && (isMural || !showLobby);
 
   const clockText = clock.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 
@@ -227,10 +244,32 @@ export function StagePage() {
 
       {/* Controles del operador (aparecen al mover el mouse) */}
       <div className={`st-controls ${controlsVisible ? 'is-visible' : ''}`}>
-        <button className={`st-ctrl ${!isMural ? 'is-active' : ''}`} onClick={() => setStageViewMode('game')}>
-          <Trophy size={14} /> Juego
+        <button
+          className={`st-ctrl ${stageViewMode === 'auto' ? 'is-active' : ''}`}
+          onClick={() => setStageViewMode('auto')}
+          title="Seguimiento automático del moderador en vivo"
+        >
+          <Radio size={14} /> En Vivo (Auto)
         </button>
-        <button className={`st-ctrl ${isMural ? 'is-active' : ''}`} onClick={() => setStageViewMode('mural')}>
+        <button
+          className={`st-ctrl ${stageViewMode === 'lobby' ? 'is-active' : ''}`}
+          onClick={() => setStageViewMode('lobby')}
+          title="Proyectar sala de bienvenida y código QR para que los participantes se unan"
+        >
+          <QrCode size={14} /> Sala QR / Equipos
+        </button>
+        <button
+          className={`st-ctrl ${stageViewMode === 'leaderboard' ? 'is-active' : ''}`}
+          onClick={() => setStageViewMode('leaderboard')}
+          title="Ver tabla de posiciones"
+        >
+          <Trophy size={14} /> Clasificación
+        </button>
+        <button
+          className={`st-ctrl ${stageViewMode === 'mural' ? 'is-active' : ''}`}
+          onClick={() => setStageViewMode('mural')}
+          title="Mural fotográfico 3D"
+        >
           <Camera size={14} /> Mural ({muralPhotos.length})
         </button>
         <button className="st-ctrl" onClick={toggleFullscreen} title="Pantalla completa">
@@ -240,12 +279,12 @@ export function StagePage() {
       </div>
 
       {/* ================================================================ CONTENIDO */}
-      <main className="st-main" key={isMural ? 'mural' : status}>
+      <main className="st-main" key={isMural ? 'mural' : showLobby ? 'lobby' : status}>
         {/* ----------------------------------------------------------- MURAL */}
         {isMural && <MuralView photos={muralPhotos} />}
 
         {/* ----------------------------------------------------------- LOBBY */}
-        {!isMural && status === 'LOBBY' && (
+        {!isMural && showLobby && (
           <div className="st-lobby">
             <aside className="st-join">
               <span className="st-kicker">Únete desde tu teléfono</span>
@@ -319,7 +358,7 @@ export function StagePage() {
         {isQuestionPhase && question && <QuestionView gameState={gameState} />}
 
         {/* ----------------------------------------------------- CLASIFICACIÓN */}
-        {!isMural && status === 'LEADERBOARD' && (
+        {!isMural && !showLobby && !isQuestionPhase && (
           <div className="st-board">
             {rankedTeams.length === 0 ? (
               <div className="st-empty">

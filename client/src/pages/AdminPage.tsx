@@ -137,6 +137,9 @@ export function AdminPage() {
     const token = getAdminToken();
     if (!token) return;
 
+    // Asignar credenciales en el objeto socket para reconexiones automáticas
+    (socket.auth as any) = { token };
+
     // Unirse a Socket.IO con token
     socket.emit('admin:join', { token }, (res) => {
       if (!res.success) {
@@ -173,6 +176,19 @@ export function AdminPage() {
   // 3. Listeners en tiempo real para el Panel
   useEffect(() => {
     if (!isAuthenticated) return;
+
+    function onSocketConnect() {
+      const token = getAdminToken();
+      if (token) {
+        (socket.auth as any) = { token };
+        socket.emit('admin:join', { token });
+      }
+    }
+
+    socket.on('connect', onSocketConnect);
+    if (socket.connected) {
+      onSocketConnect();
+    }
 
     function onParticipantsUpdate(list: Participant[]) {
       setParticipants(list);
@@ -239,6 +255,7 @@ export function AdminPage() {
     socket.on('chat:status-change', onChatStatusChange);
 
     return () => {
+      socket.off('connect', onSocketConnect);
       socket.off('admin:participants-update', onParticipantsUpdate);
       socket.off('teams:update', onTeamsUpdate);
       socket.off('admin:participant-joined', onParticipantJoined);
@@ -286,7 +303,8 @@ export function AdminPage() {
       {
         recipientType,
         recipientId: recipientType === 'PARTICIPANT' ? selectedParticipantId : undefined,
-        content: messageContent.trim()
+        content: messageContent.trim(),
+        token: getAdminToken() || undefined
       },
       (res) => {
         setIsSending(false);
@@ -351,7 +369,7 @@ export function AdminPage() {
 
   // Acciones de Trivia & Moderación en Vivo
   const handleStartQuestion = (questionId: string) => {
-    socket.emit('admin:start-question', { questionId }, (res) => {
+    socket.emit('admin:start-question', { questionId, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert(res?.error || 'Error al lanzar la pregunta');
       }
@@ -359,7 +377,7 @@ export function AdminPage() {
   };
 
   const handleGradeDefense = (grade: 'CORRECT' | 'PARTIAL' | 'INCORRECT') => {
-    socket.emit('admin:grade-defense', { grade }, (res) => {
+    socket.emit('admin:grade-defense', { grade, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert(res?.error || 'Error al calificar la respuesta');
       }
@@ -367,7 +385,7 @@ export function AdminPage() {
   };
 
   const handleShowLeaderboard = () => {
-    socket.emit('admin:show-leaderboard', (res) => {
+    socket.emit('admin:show-leaderboard', { token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert('Error al proyectar el podio');
       }
@@ -375,7 +393,7 @@ export function AdminPage() {
   };
 
   const handleStartCountdown = (countdownSeconds = 7) => {
-    socket.emit('admin:start-countdown', { countdownSeconds }, (res) => {
+    socket.emit('admin:start-countdown', { countdownSeconds, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert(res?.error || 'Error al iniciar la cuenta regresiva');
       }
@@ -384,7 +402,7 @@ export function AdminPage() {
 
   const handleCancelQuestion = () => {
     if (confirm('¿Deseas cancelar esta pregunta inmediatamente y volver a la sala de espera?')) {
-      socket.emit('admin:cancel-question', (res) => {
+      socket.emit('admin:cancel-question', { token: getAdminToken() || undefined }, (res) => {
         if (!res?.success) {
           alert(res?.error || 'Error al cancelar la pregunta');
         }
@@ -393,7 +411,7 @@ export function AdminPage() {
   };
 
   const handleResetToLobby = () => {
-    socket.emit('admin:reset-to-lobby', (res) => {
+    socket.emit('admin:reset-to-lobby', { token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert('Error al reiniciar al lobby');
       }
@@ -413,7 +431,8 @@ export function AdminPage() {
         newQuestionType === 'MULTIPLE_CHOICE'
           ? [newOptionA.trim(), newOptionB.trim(), newOptionC.trim(), newOptionD.trim()].filter(Boolean)
           : undefined,
-      correctOptionIndex: newQuestionType === 'MULTIPLE_CHOICE' ? Number(newCorrectOptionIndex) : undefined
+      correctOptionIndex: newQuestionType === 'MULTIPLE_CHOICE' ? Number(newCorrectOptionIndex) : undefined,
+      token: getAdminToken() || undefined
     };
 
     socket.emit('admin:create-question', payload, (res) => {
@@ -436,7 +455,7 @@ export function AdminPage() {
     if (!confirm('¿Deseas iniciar el emparejamiento automático de duplas? Esto cruzará a los participantes de equipos diferentes.')) return;
 
     setIsStartingPairings(true);
-    socket.emit('admin:start-pairings', (res) => {
+    socket.emit('admin:start-pairings', { token: getAdminToken() || undefined }, (res) => {
       setIsStartingPairings(false);
       if (res?.success) {
         setChatEnabled(true);
@@ -448,7 +467,7 @@ export function AdminPage() {
   };
 
   const handleToggleChat = () => {
-    socket.emit('admin:toggle-chat', { enabled: !chatEnabled }, (res) => {
+    socket.emit('admin:toggle-chat', { enabled: !chatEnabled, token: getAdminToken() || undefined }, (res) => {
       if (res?.success) {
         setChatEnabled(res.chatEnabled);
       }
@@ -456,7 +475,7 @@ export function AdminPage() {
   };
 
   const handleModeratePhoto = (messageId: string, approved: boolean) => {
-    socket.emit('admin:moderate-photo', { messageId, approved }, (res) => {
+    socket.emit('admin:moderate-photo', { messageId, approved, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert('Error al moderar la fotografía');
       }
@@ -465,7 +484,7 @@ export function AdminPage() {
 
   // Contingencias
   const handleReboundQuestion = (seconds = 15) => {
-    socket.emit('admin:rebound-question', { seconds }, (res) => {
+    socket.emit('admin:rebound-question', { seconds, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert(res?.error || 'Error al abrir el rebote de la pregunta');
       }
@@ -473,7 +492,7 @@ export function AdminPage() {
   };
 
   const handleAdjustPoints = (teamId: string, deltaPoints: number) => {
-    socket.emit('admin:adjust-team-points', { teamId, deltaPoints }, (res) => {
+    socket.emit('admin:adjust-team-points', { teamId, deltaPoints, token: getAdminToken() || undefined }, (res) => {
       if (!res?.success) {
         alert(res?.error || 'Error al ajustar puntos');
       }
@@ -482,7 +501,7 @@ export function AdminPage() {
 
   const handleKickParticipant = (p: Participant) => {
     if (confirm(`¿Expulsar a "${p.name}" del evento? Se desconectará de inmediato.`)) {
-      socket.emit('admin:kick-participant', { participantId: p.id }, (res) => {
+      socket.emit('admin:kick-participant', { participantId: p.id, token: getAdminToken() || undefined }, (res) => {
         if (!res?.success) {
           alert(res?.error || 'Error al expulsar al participante');
         }
@@ -496,7 +515,7 @@ export function AdminPage() {
       return;
     }
     if (confirm(`¿Transferir el rol de CAPITÁN a "${p.name}"? Su pulsador se habilitará de inmediato.`)) {
-      socket.emit('admin:transfer-captain', { teamId: p.teamId, newCaptainId: p.id }, (res) => {
+      socket.emit('admin:transfer-captain', { teamId: p.teamId, newCaptainId: p.id, token: getAdminToken() || undefined }, (res) => {
         if (!res?.success) {
           alert(res?.error || 'Error al transferir la capitanía');
         }
@@ -510,7 +529,7 @@ export function AdminPage() {
       return;
     }
     setIsResetting(true);
-    socket.emit('admin:reset-event', { confirmText: 'RESET' }, (res) => {
+    socket.emit('admin:reset-event', { confirmText: 'RESET', token: getAdminToken() || undefined }, (res) => {
       setIsResetting(false);
       if (res?.success) {
         setShowResetModal(false);
@@ -712,7 +731,27 @@ export function AdminPage() {
                 </div>
 
                 <div className="adm-monitor-actions">
-                  <button type="button" onClick={handleShowLeaderboard} className="adm-btn-subtle">
+                  <button
+                    type="button"
+                    onClick={handleResetToLobby}
+                    className={`adm-btn-subtle ${gameState.status === 'LOBBY' ? 'active' : ''}`}
+                    title="Proyectar sala de bienvenida con código QR para que los participantes se unan"
+                    style={
+                      gameState.status === 'LOBBY'
+                        ? { borderColor: 'var(--primary)', color: 'var(--primary)', background: 'rgba(255, 90, 31, 0.12)' }
+                        : {}
+                    }
+                  >
+                    <QrCode size={14} />
+                    <span>Sala de Espera (QR)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleShowLeaderboard}
+                    className={`adm-btn-subtle ${gameState.status === 'LEADERBOARD' ? 'active' : ''}`}
+                    title="Proyectar tabla general de posiciones"
+                  >
                     <Trophy size={14} />
                     <span>Proyectar Podio</span>
                   </button>
@@ -740,11 +779,6 @@ export function AdminPage() {
                       <span>Cancelar Pregunta</span>
                     </button>
                   )}
-
-                  <button type="button" onClick={handleResetToLobby} className="adm-btn-subtle">
-                    <RotateCcw size={14} />
-                    <span>Reiniciar a Lobby</span>
-                  </button>
                 </div>
               </div>
 

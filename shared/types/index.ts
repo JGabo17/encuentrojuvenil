@@ -201,27 +201,31 @@ export interface ClientToServerEvents {
 
   // Moderador / Admin Trivia Control
   'admin:start-question': (
-    data: { questionId: string },
+    data: { questionId: string; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:start-countdown': (
-    data?: { countdownSeconds?: number },
+    data?: { countdownSeconds?: number; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:cancel-question': (
+    data?: { token?: string } | ((response: { success: boolean; error?: string }) => void),
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:grade-defense': (
-    data: { grade: 'CORRECT' | 'PARTIAL' | 'INCORRECT' },
+    data: { grade: 'CORRECT' | 'PARTIAL' | 'INCORRECT'; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:show-result': (
+    data?: { token?: string } | ((response: { success: boolean; error?: string }) => void),
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:show-leaderboard': (
+    data?: { token?: string } | ((response: { success: boolean }) => void),
     callback?: (response: { success: boolean }) => void
   ) => void;
   'admin:reset-to-lobby': (
+    data?: { token?: string } | ((response: { success: boolean }) => void),
     callback?: (response: { success: boolean }) => void
   ) => void;
   'admin:create-question': (
@@ -232,6 +236,7 @@ export interface ClientToServerEvents {
       correctOptionIndex?: number;
       points?: number;
       timeLimit?: number;
+      token?: string;
     },
     callback?: (response: { success: boolean; question?: Question; error?: string }) => void
   ) => void;
@@ -250,35 +255,37 @@ export interface ClientToServerEvents {
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:send-message': (
-    data: { recipientType: RecipientType; recipientId?: string; content: string },
+    data: { recipientType: RecipientType; recipientId?: string; content: string; token?: string },
     callback?: (response: { success: boolean; error?: string; message?: MessageLog }) => void
   ) => void;
   'admin:create-template': (
-    data: { name: string; content: string },
+    data: { name: string; content: string; token?: string },
     callback?: (response: { success: boolean; template?: MessageTemplate; error?: string }) => void
   ) => void;
   'admin:update-template': (
-    data: { id: string; name: string; content: string },
+    data: { id: string; name: string; content: string; token?: string },
     callback?: (response: { success: boolean; template?: MessageTemplate; error?: string }) => void
   ) => void;
   'admin:delete-template': (
-    data: { id: string },
+    data: { id: string; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
 
   // Fase 3: Encuentro e Integración (Chat en duplas y Mural)
   'admin:start-pairings': (
+    data?: { token?: string } | ((response: { success: boolean; count?: number; error?: string }) => void),
     callback?: (response: { success: boolean; count?: number; error?: string }) => void
   ) => void;
   'admin:toggle-chat': (
-    data: { enabled: boolean },
+    data: { enabled: boolean; token?: string },
     callback?: (response: { success: boolean; chatEnabled: boolean }) => void
   ) => void;
   'admin:get-moderation-queue': (
+    data?: { token?: string } | ((response: { success: boolean; queue: ChatMessageItem[] }) => void),
     callback?: (response: { success: boolean; queue: ChatMessageItem[] }) => void
   ) => void;
   'admin:moderate-photo': (
-    data: { messageId: string; approved: boolean },
+    data: { messageId: string; approved: boolean; token?: string },
     callback?: (response: { success: boolean }) => void
   ) => void;
   'participant:get-pairing': (
@@ -294,23 +301,23 @@ export interface ClientToServerEvents {
 
   // Superpoderes de Admin & Contingencias en Vivo
   'admin:adjust-team-points': (
-    data: { teamId: string; deltaPoints: number },
+    data: { teamId: string; deltaPoints: number; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:rebound-question': (
-    data?: { seconds?: number },
+    data?: { seconds?: number; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:kick-participant': (
-    data: { participantId: string },
+    data: { participantId: string; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:transfer-captain': (
-    data: { teamId: string; newCaptainId: string },
+    data: { teamId: string; newCaptainId: string; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
   'admin:reset-event': (
-    data: { confirmText: string },
+    data: { confirmText: string; token?: string },
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
 

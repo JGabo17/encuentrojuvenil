@@ -86,6 +86,14 @@ export function ParticipantPage() {
   };
 
   useEffect(() => {
+    // Comprobar si la URL pide nueva sesión o reseteo
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('new') === '1' || searchParams.get('reset') === '1') {
+      localStorage.removeItem('encuentro_session_token');
+      localStorage.removeItem('encuentro_participant_name');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     loadTeams();
 
     // Obtener estado inicial del juego
@@ -105,6 +113,12 @@ export function ParticipantPage() {
             setCurrentTeam(res.participant.team);
           }
           setIsRegistered(true);
+        } else {
+          localStorage.removeItem('encuentro_session_token');
+          localStorage.removeItem('encuentro_participant_name');
+          setIsRegistered(false);
+          setParticipant(null);
+          setCurrentTeam(null);
         }
       });
     }
@@ -124,6 +138,12 @@ export function ParticipantPage() {
               setCurrentTeam(res.participant.team);
             }
             setIsRegistered(true);
+          } else {
+            localStorage.removeItem('encuentro_session_token');
+            localStorage.removeItem('encuentro_participant_name');
+            setIsRegistered(false);
+            setParticipant(null);
+            setCurrentTeam(null);
           }
         });
       }
@@ -364,8 +384,8 @@ export function ParticipantPage() {
     setTimeout(() => setCopiedPin(false), 2000);
   };
 
-  const handleResetSession = () => {
-    if (confirm('¿Deseas salir del equipo y cerrar sesión?')) {
+  const handleResetSession = (skipConfirm = false) => {
+    if (skipConfirm || confirm('¿Deseas salir del equipo y volver a la pantalla de registro?')) {
       localStorage.removeItem('encuentro_session_token');
       localStorage.removeItem('encuentro_participant_name');
       setIsRegistered(false);
@@ -475,11 +495,75 @@ export function ParticipantPage() {
           </div>
         </div>
 
-        <div className="pt-status-pill">
-          <span className={`pt-status-dot ${isConnected ? '' : 'is-off'}`} />
-          {isConnected ? 'Conectado' : 'Sin señal'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="pt-status-pill">
+            <span className={`pt-status-dot ${isConnected ? '' : 'is-off'}`} />
+            {isConnected ? 'Conectado' : 'Sin señal'}
+          </div>
+          {isRegistered && (
+            <button
+              type="button"
+              onClick={() => handleResetSession(false)}
+              title="Cambiar de equipo o cerrar sesión"
+              style={{
+                background: 'rgba(255, 90, 31, 0.12)',
+                border: '1px solid rgba(255, 90, 31, 0.4)',
+                color: '#ff5a1f',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              <LogOut size={12} />
+              <span>Salir</span>
+            </button>
+          )}
         </div>
       </header>
+
+      {/* Alerta de sesión activa recuperada con opción directa a cambiar */}
+      {isRegistered && participant && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#13151b',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '4px',
+            padding: '8px 12px',
+            marginBottom: '12px',
+            fontSize: '12px',
+            color: 'var(--text-muted)'
+          }}
+        >
+          <div>
+            <span>Conectado como </span>
+            <strong style={{ color: '#fff' }}>{participant.name}</strong>
+            {currentTeam && <span> ({currentTeam.name})</span>}
+          </div>
+          <button
+            type="button"
+            onClick={() => handleResetSession(false)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--primary)',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              textDecoration: 'underline'
+            }}
+          >
+            Cambiar equipo
+          </button>
+        </div>
+      )}
 
       {/* Alerta de desconexión */}
       {!isConnected && (
@@ -1101,7 +1185,7 @@ export function ParticipantPage() {
           {/* Salir de sesión */}
           <button
             type="button"
-            onClick={handleResetSession}
+            onClick={() => handleResetSession(false)}
             style={{
               margin: '8px auto',
               background: 'transparent',
