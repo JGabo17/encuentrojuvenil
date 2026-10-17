@@ -980,6 +980,22 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
         await resetEventData();
         gameEngine.resetToLobby();
 
+        // Limpiar en memoria el estado y salas de todos los sockets participantes conectados
+        for (const [_, clientSocket] of io.sockets.sockets) {
+          if (!clientSocket.data.isAdmin) {
+            clientSocket.data.participantId = undefined;
+            clientSocket.data.participantName = undefined;
+            clientSocket.data.teamId = undefined;
+            clientSocket.data.teamName = undefined;
+            clientSocket.data.role = undefined;
+            for (const room of clientSocket.rooms) {
+              if (room.startsWith('participant:') || room.startsWith('team:')) {
+                clientSocket.leave(room);
+              }
+            }
+          }
+        }
+
         // Notificar a todos los dispositivos en el auditorio para reiniciar su vista local
         io.emit('event:reset');
 

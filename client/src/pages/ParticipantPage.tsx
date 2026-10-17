@@ -107,15 +107,15 @@ export function ParticipantPage() {
 
     if (savedToken && savedName) {
       socket.emit('participant:join', { name: savedName, sessionToken: savedToken }, (res) => {
-        if (res.success && res.participant) {
+        if (res?.success && res.participant && res.participant.team) {
           setParticipant(res.participant);
-          if (res.participant.team) {
-            setCurrentTeam(res.participant.team);
-          }
+          setCurrentTeam(res.participant.team);
           setIsRegistered(true);
         } else {
           localStorage.removeItem('encuentro_session_token');
           localStorage.removeItem('encuentro_participant_name');
+          sessionStorage.removeItem('encuentro_session_token');
+          sessionStorage.removeItem('encuentro_participant_name');
           setIsRegistered(false);
           setParticipant(null);
           setCurrentTeam(null);
@@ -132,15 +132,15 @@ export function ParticipantPage() {
       const savedName = localStorage.getItem('encuentro_participant_name');
       if (savedToken && savedName) {
         socket.emit('participant:join', { name: savedName, sessionToken: savedToken }, (res) => {
-          if (res.success && res.participant) {
+          if (res?.success && res.participant && res.participant.team) {
             setParticipant(res.participant);
-            if (res.participant.team) {
-              setCurrentTeam(res.participant.team);
-            }
+            setCurrentTeam(res.participant.team);
             setIsRegistered(true);
           } else {
             localStorage.removeItem('encuentro_session_token');
             localStorage.removeItem('encuentro_participant_name');
+            sessionStorage.removeItem('encuentro_session_token');
+            sessionStorage.removeItem('encuentro_participant_name');
             setIsRegistered(false);
             setParticipant(null);
             setCurrentTeam(null);
@@ -234,11 +234,22 @@ export function ParticipantPage() {
     function onResetSession() {
       localStorage.removeItem('encuentro_session_token');
       localStorage.removeItem('encuentro_participant_name');
+      sessionStorage.removeItem('encuentro_session_token');
+      sessionStorage.removeItem('encuentro_participant_name');
       setIsRegistered(false);
       setParticipant(null);
       setCurrentTeam(null);
       setMessages([]);
+      setCaptainName('');
+      setTeamName('');
+      setMemberName('');
+      setMemberPin('');
       loadTeams();
+    }
+
+    function onKicked(data: { reason?: string }) {
+      onResetSession();
+      alert(data?.reason || 'Has sido retirado del evento por el moderador.');
     }
 
     socket.on('connect', onConnect);
@@ -254,6 +265,7 @@ export function ParticipantPage() {
     socket.on('chat:new-message', onChatMessage);
     socket.on('chat:status-change', onChatStatus);
     socket.on('event:reset', onResetSession);
+    socket.on('participant:kicked', onKicked);
 
     return () => {
       socket.off('connect', onConnect);
@@ -267,6 +279,7 @@ export function ParticipantPage() {
       socket.off('chat:new-message', onChatMessage);
       socket.off('chat:status-change', onChatStatus);
       socket.off('event:reset', onResetSession);
+      socket.off('participant:kicked', onKicked);
     };
   }, [currentTeam]);
 
@@ -388,10 +401,16 @@ export function ParticipantPage() {
     if (skipConfirm || confirm('¿Deseas salir del equipo y volver a la pantalla de registro?')) {
       localStorage.removeItem('encuentro_session_token');
       localStorage.removeItem('encuentro_participant_name');
+      sessionStorage.removeItem('encuentro_session_token');
+      sessionStorage.removeItem('encuentro_participant_name');
       setIsRegistered(false);
       setParticipant(null);
       setCurrentTeam(null);
       setMessages([]);
+      setCaptainName('');
+      setTeamName('');
+      setMemberName('');
+      setMemberPin('');
       loadTeams();
     }
   };

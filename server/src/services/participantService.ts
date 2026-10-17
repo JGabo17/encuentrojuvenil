@@ -44,7 +44,7 @@ export async function registerOrReconnectParticipant(data: {
       include: { team: { include: { members: true } } }
     });
 
-    if (existing) {
+    if (existing && existing.eventId === activeEvent.id) {
       const updated = await prisma.participant.update({
         where: { id: existing.id },
         data: {
@@ -57,9 +57,13 @@ export async function registerOrReconnectParticipant(data: {
       });
       return mapToSharedParticipant(updated);
     }
+
+    // Si el sessionToken ya no existe (evento reseteado o sesión eliminada),
+    // lanzar error para que el cliente limpie su localStorage y muestre la pantalla de registro
+    throw new Error('Sesión no encontrada o evento reiniciado.');
   }
 
-  // Si no tiene sessionToken o no existe, creamos un nuevo participante
+  // Si no tiene sessionToken (ej: pruebas directas)
   const sessionToken = crypto.randomUUID();
   const created = await prisma.participant.create({
     data: {
