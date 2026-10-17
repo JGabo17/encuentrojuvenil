@@ -1268,41 +1268,99 @@ export function AdminPage() {
                 </div>
               ) : (
                 <div className="adm-teams-grid">
-                  {teams.map((t) => (
-                    <div key={t.id} className="adm-team-card">
-                      <div className="adm-team-header">
-                        <div className="adm-team-identity">
-                          {t.avatar && t.avatar.startsWith('data:image') ? (
-                            <img src={t.avatar} alt={t.name} className="adm-team-crest" />
-                          ) : (
-                            <div
-                              className="adm-team-crest"
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                background: '#1c1f24',
-                                fontSize: '18px'
-                              }}
-                            >
-                              {t.avatar || 'T'}
+                  {teams.map((t) => {
+                    const currentCaptain = t.members?.find((m) => m.role === 'CAPTAIN');
+                    const otherMembers = t.members?.filter((m) => m.role !== 'CAPTAIN') || [];
+
+                    return (
+                      <div key={t.id} className="adm-team-card">
+                        <div className="adm-team-header">
+                          <div className="adm-team-identity">
+                            {t.avatar && t.avatar.startsWith('data:image') ? (
+                              <img src={t.avatar} alt={t.name} className="adm-team-crest" />
+                            ) : (
+                              <div
+                                className="adm-team-crest"
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  background: '#1c1f24',
+                                  fontSize: '18px'
+                                }}
+                              >
+                                {t.avatar || 'T'}
+                              </div>
+                            )}
+                            <div>
+                              <div className="adm-team-name">{t.name}</div>
+                              <div className="adm-team-members">
+                                {t.memberCount} integrante{t.memberCount !== 1 ? 's' : ''}
+                              </div>
                             </div>
-                          )}
-                          <div>
-                            <div className="adm-team-name">{t.name}</div>
-                            <div className="adm-team-members">
-                              {t.memberCount} integrante{t.memberCount !== 1 ? 's' : ''}
-                            </div>
+                          </div>
+
+                          <div className="adm-pin-tag">
+                            <Key size={11} />
+                            <span>PIN: {t.pin || '••••'}</span>
                           </div>
                         </div>
 
-                        <div className="adm-pin-tag">
-                          <Key size={11} />
-                          <span>PIN: {t.pin || '••••'}</span>
-                        </div>
-                      </div>
+                        {/* Información de Capitán y Reasignación Rápida */}
+                        <div className="adm-team-captain-strip">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Crown size={12} color="#fbbf24" />
+                            <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Capitán:</span>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#fbbf24' }}>
+                              {currentCaptain?.name || 'Sin asignar'}
+                            </span>
+                            {currentCaptain && (
+                              <span
+                                className={`adm-dot ${currentCaptain.isConnected ? 'online' : 'offline'}`}
+                                title={currentCaptain.isConnected ? 'Capitán Online' : 'Capitán Desconectado (Sin Internet)'}
+                              />
+                            )}
+                          </div>
 
-                      <div className="adm-score-strip">
+                          {otherMembers.length > 0 && (
+                            <select
+                              className="adm-transfer-select"
+                              defaultValue=""
+                              onChange={(e) => {
+                                const newCapId = e.target.value;
+                                if (!newCapId) return;
+                                const targetMember = otherMembers.find((m) => m.id === newCapId);
+                                if (
+                                  targetMember &&
+                                  confirm(
+                                    `¿Transferir la capitanía del equipo "${t.name}" a "${targetMember.name}"?\n\nEl capitán anterior pasará a ser miembro y "${targetMember.name}" recibirá el pulsador de inmediato.`
+                                  )
+                                ) {
+                                  socket.emit(
+                                    'admin:transfer-captain',
+                                    { teamId: t.id, newCaptainId: targetMember.id, token: getAdminToken() || undefined },
+                                    (res) => {
+                                      if (!res?.success) alert(res?.error || 'Error al transferir capitanía');
+                                    }
+                                  );
+                                }
+                                e.target.value = '';
+                              }}
+                              title="Reasignar capitán si se quedó sin internet o batería"
+                            >
+                              <option value="" disabled>
+                                👑 Reasignar Capitán...
+                              </option>
+                              {otherMembers.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name} {m.isConnected ? '(🟢 Online)' : '(⚪ Offline)'}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+
+                        <div className="adm-score-strip">
                         <span className="adm-score-label">Puntaje Actual</span>
                         <span className="adm-score-val">{t.score} pts</span>
                       </div>
@@ -1440,7 +1498,8 @@ export function AdminPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
                 </div>
               )}
             </div>
