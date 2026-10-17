@@ -5,7 +5,7 @@ import { fetchStageData } from '../services/api';
 import { TeamAvatar } from '../components/TeamAvatar';
 import { CircularCarousel } from '../components/CircularCarousel';
 import confetti from 'canvas-confetti';
-import type { StageData, Team, GameState, GameStatus, MuralPhotoItem, WallMessage } from '../../../shared/types/index.js';
+import type { StageData, Team, GameState, GameStatus, MuralPhotoItem, WallMessage, StageAudioState } from '../../../shared/types/index.js';
 import { Maximize, Minimize, Trophy, Camera, Radio, QrCode, Music, Volume2, VolumeX } from 'lucide-react';
 import '../styles/stage.css';
 
@@ -53,12 +53,16 @@ export function StagePage() {
   const [wallMessages, setWallMessages] = useState<WallMessage[]>([]);
   const [wallEnabled, setWallEnabled] = useState(true);
 
-  // Controles de audio de la pista musical ambiental
+  // Controles de audio de la pista musical ambiental (sincronizada con el Admin)
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [chatActive, setChatActive] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
+  const [remoteAudio, setRemoteAudio] = useState<StageAudioState>({
+    playing: false,
+    volume: 0.6,
+    muted: false,
+    trackTitle: 'Cambiaré Mis Tristezas / Eres Fiel'
+  });
 
   // Controles del operador: se ocultan solos para no ensuciar la proyección
   const [controlsVisible, setControlsVisible] = useState(false);
@@ -81,7 +85,7 @@ export function StagePage() {
           setStageData(res.data);
           if (res.data.muralPhotos) setMuralPhotos(res.data.muralPhotos);
           if (res.gameState) setGameState(res.gameState);
-          if (typeof res.chatEnabled === 'boolean') setChatActive(res.chatEnabled);
+          if (res.audioState) setRemoteAudio(res.audioState);
         }
       });
       socket.emit('stage:get-wall', (res) => {
@@ -139,13 +143,23 @@ export function StagePage() {
     });
 
     function onChatStatusChange(data: { chatEnabled: boolean }) {
-      setChatActive(data.chatEnabled);
       // Si el moderador activó el chat y no hay trivia en juego, proyectar el mural automáticamente
       if (data.chatEnabled) {
         setStageViewMode((prev) => (prev === 'auto' ? 'mural' : prev));
       }
     }
     socket.on('chat:status-change', onChatStatusChange);
+
+    function onStageAudioUpdate(audioState: StageAudioState) {
+      setRemoteAudio(audioState);
+      const audio = audioRef.current;
+      if (!audio) return;
+      if (audioState.seekTime) {
+        audio.currentTime = 0;
+      }
+      audio.volume = audioState.muted ? 0 : audioState.volume;
+    }
+    socket.on('stage:audio-update', onStageAudioUpdate);
 
     return () => {
       socket.off('connect', registerStage);
@@ -158,6 +172,7 @@ export function StagePage() {
       socket.off('stage:mural-update');
       socket.off('stage:wall-update');
       socket.off('chat:status-change', onChatStatusChange);
+      socket.off('stage:audio-update', onStageAudioUpdate);
     };
   }, []);
 
@@ -226,17 +241,18 @@ export function StagePage() {
       status === 'EVALUATING' ||
       status === 'SHOWING_RESULT');
 
-  // Reproducción de la pista musical ambiental:
-  // Suena mientras el chat esté activo o se proyecte el mural, y se silencia automáticamente
-  // si comienza una pregunta de trivia para no interferir con la voz del moderador.
-  const shouldPlayAudio = (chatActive || isMural) && !isQuestionPhase && !isAudioMuted;
+  // Reproducción de la pista musical ambiental gobernada por el Admin:
+  // Suena si el Admin le dio PLAY (o si el chat/mural están activos según el estado remoto)
+  // y se silencia temporalmente si comienza una pregunta de trivia para no tapar la voz del moderador.
+  const shouldPlayAudio = remoteAudio.playing && !isQuestionPhase;
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
+    audio.volume = remoteAudio.muted ? 0 : remoteAudio.volume;
+
     if (shouldPlayAudio) {
-      audio.volume = 0.55;
       const p = audio.play();
       if (p !== undefined) {
         p.then(() => {
@@ -252,7 +268,7 @@ export function StagePage() {
       audio.pause();
       setIsAudioPlaying(false);
     }
-  }, [shouldPlayAudio]);
+  }, [shouldPlayAudio, remoteAudio.volume, remoteAudio.muted]);
 
   // Si el navegador exigió interacción previa para el audio, desbloquear con el primer clic o tecla
   useEffect(() => {
@@ -357,11 +373,11 @@ export function StagePage() {
           className={`st-ctrl ${isAudioPlaying ? 'is-active' : ''}`}
           onClick={() => {
             if (isAudioPlaying) {
-              setIsAudioMuted(true);
+              setRemoteAudio((prev) => ({ ...prev, playing: false }));
               audioRef.current?.pause();
               setIsAudioPlaying(false);
             } else {
-              setIsAudioMuted(false);
+              setRemoteAudio((prev) => ({ ...prev, playing: true, muted: false }));
               audioRef.current?.play().then(() => {
                 setIsAudioPlaying(true);
                 setAudioBlocked(false);

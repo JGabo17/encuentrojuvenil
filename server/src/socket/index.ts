@@ -22,7 +22,7 @@ import {
   sendMessageSchema,
   templateSchema
 } from '../utils/validators.js';
-import type { ClientToServerEvents, ServerToClientEvents, LiveMessagePayload } from '../types/index.js';
+import type { ClientToServerEvents, ServerToClientEvents, LiveMessagePayload, StageAudioState } from '../types/index.js';
 
 import {
   createTeamWithCaptain,
@@ -71,6 +71,14 @@ interface SocketData {
   teamName?: string;
   role?: string;
 }
+
+// Estado centralizado del audio en vivo para la pantalla del Stage (Auditorio)
+let stageAudioState: StageAudioState = {
+  playing: false,
+  volume: 0.6,
+  muted: false,
+  trackTitle: 'Cambiaré Mis Tristezas / Eres Fiel'
+};
 
 function checkIsAdmin(socket: Socket<any, any, any, SocketData>, tokenOrData?: any): boolean {
   if (socket.data.isAdmin) return true;
@@ -337,7 +345,13 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
         const eventId = data.teams[0]?.eventId || 'default';
         const muralPhotos = await getApprovedMuralPhotos(eventId);
         data.muralPhotos = muralPhotos;
-        callback?.({ success: true, data, gameState, chatEnabled: isChatEnabled() });
+        callback?.({
+          success: true,
+          data,
+          gameState,
+          chatEnabled: isChatEnabled(),
+          audioState: stageAudioState
+        });
       } catch (err: any) {
         console.error('[stage:join] Error:', err);
         callback?.({
@@ -521,10 +535,55 @@ export function setupSocketHandlers(io: Server<ClientToServerEvents, ServerToCli
       try {
         const updated = setChatEnabled(data.enabled);
         io.emit('chat:status-change', { chatEnabled: updated });
+        if (updated) {
+          stageAudioState.playing = true;
+          stageAudioState.muted = false;
+          io.to('room:stage').emit('stage:audio-update', stageAudioState);
+          io.to('room:admin').emit('stage:audio-update', stageAudioState);
+        }
         callback?.({ success: true, chatEnabled: updated });
       } catch (err: any) {
         callback?.({ success: false, chatEnabled: isChatEnabled() });
       }
+    });
+
+    // Control remoto de audio del Stage desde el Panel de Admin
+    socket.on('admin:get-stage-audio', async (callback) => {
+      callback?.({ success: true, audioState: stageAudioState });
+    });
+
+    socket.on('admin:set-stage-audio', async (data, callback) => {
+      if (!checkIsAdmin(socket, data)) {
+        return callback?.({ success: false, error: 'No autorizado' });
+      }
+
+      switch (data.action) {
+        case 'play':
+          stageAudioState.playing = true;
+          stageAudioState.muted = false;
+          break;
+        case 'pause':
+          stageAudioState.playing = false;
+          break;
+        case 'restart':
+          stageAudioState.playing = true;
+          stageAudioState.muted = false;
+          stageAudioState.seekTime = Date.now();
+          break;
+        case 'set-volume':
+          if (typeof data.volume === 'number') {
+            stageAudioState.volume = Math.max(0, Math.min(1, data.volume));
+          }
+          break;
+        case 'toggle-mute':
+          stageAudioState.muted = data.muted !== undefined ? data.muted : !stageAudioState.muted;
+          break;
+      }
+
+      io.to('room:stage').emit('stage:audio-update', stageAudioState);
+      io.to('room:admin').emit('stage:audio-update', stageAudioState);
+
+      callback?.({ success: true, audioState: stageAudioState });
     });
 
     socket.on('admin:get-moderation-queue', async (...args: any[]) => {

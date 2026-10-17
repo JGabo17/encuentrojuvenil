@@ -177,6 +177,15 @@ export interface AdminWallState {
   messages: WallModerationItem[];
   words: string[];
 }
+
+export interface StageAudioState {
+  playing: boolean;
+  volume: number;
+  muted: boolean;
+  trackTitle: string;
+  seekTime?: number;
+}
+
 export interface MuralPhotoItem {
   id: string;
   photoUrl: string;
@@ -273,7 +282,7 @@ export interface ClientToServerEvents {
 
   // Pantalla del Auditorio / Proyector
   'stage:join': (
-    callback?: (response: { success: boolean; data: StageData; gameState: GameState; chatEnabled?: boolean }) => void
+    callback?: (response: { success: boolean; data: StageData; gameState: GameState; chatEnabled?: boolean; audioState?: StageAudioState }) => void
   ) => void;
 
   // Admin general
@@ -371,6 +380,20 @@ export interface ClientToServerEvents {
     callback?: (response: { success: boolean; error?: string }) => void
   ) => void;
 
+  // Control de Audio en Vivo para el Stage (Auditorio)
+  'admin:set-stage-audio': (
+    data: {
+      action: 'play' | 'pause' | 'restart' | 'set-volume' | 'toggle-mute';
+      volume?: number;
+      muted?: boolean;
+      token?: string;
+    },
+    callback?: (response: { success: boolean; audioState?: StageAudioState; error?: string }) => void
+  ) => void;
+  'admin:get-stage-audio': (
+    callback?: (response: { success: boolean; audioState: StageAudioState }) => void
+  ) => void;
+
   // Ping básico
   'client:ping': (data: { message: string }) => void;
 }
@@ -410,6 +433,7 @@ export interface ServerToClientEvents {
   'admin:participant-status': (data: { participantId: string; isConnected: boolean }) => void;
   'admin:message-logged': (log: MessageLog) => void;
   'admin:questions-update': (questions: Question[]) => void;
+  'stage:audio-update': (state: StageAudioState) => void;
 
   // General
   'system:error': (data: { message: string }) => void;

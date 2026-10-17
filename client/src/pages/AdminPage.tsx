@@ -39,7 +39,11 @@ import {
   ShieldAlert,
   UserMinus,
   Crown,
-  AlertTriangle
+  AlertTriangle,
+  Music,
+  Volume2,
+  VolumeX,
+  Pause
 } from 'lucide-react';
 import type {
   Participant,
@@ -51,7 +55,8 @@ import type {
   QuestionType,
   ChatMessageItem,
   Team,
-  WallModerationItem
+  WallModerationItem,
+  StageAudioState
 } from '../../../shared/types/index.js';
 import '../styles/admin.css';
 
@@ -94,6 +99,14 @@ export function AdminPage() {
   const [wallItems, setWallItems] = useState<WallModerationItem[]>([]);
   const [wallWordsInput, setWallWordsInput] = useState('');
   const [wallWordsSaved, setWallWordsSaved] = useState(false);
+
+  // Control remoto de audio del Stage (Auditorio)
+  const [stageAudio, setStageAudio] = useState<StageAudioState>({
+    playing: false,
+    volume: 0.6,
+    muted: false,
+    trackTitle: 'Cambiaré Mis Tristezas / Eres Fiel'
+  });
 
   // Estados de Trivia y Buzzer (Fase 2)
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -216,6 +229,9 @@ export function AdminPage() {
           setWallItems(res.messages);
         }
       });
+      socket.emit('admin:get-stage-audio', (res) => {
+        if (res?.success && res.audioState) setStageAudio(res.audioState);
+      });
     }
 
     socket.on('connect', onSocketConnect);
@@ -284,6 +300,10 @@ export function AdminPage() {
       setQuestions(list);
     }
 
+    function onStageAudioUpdate(audioState: StageAudioState) {
+      setStageAudio(audioState);
+    }
+
     socket.on('admin:participants-update', onParticipantsUpdate);
     socket.on('teams:update', onTeamsUpdate);
     socket.on('admin:participant-joined', onParticipantJoined);
@@ -297,6 +317,7 @@ export function AdminPage() {
     socket.on('chat:status-change', onChatStatusChange);
     socket.on('admin:wall-update', onWallUpdate);
     socket.on('admin:questions-update', onQuestionsUpdate);
+    socket.on('stage:audio-update', onStageAudioUpdate);
 
     return () => {
       socket.off('connect', onSocketConnect);
@@ -313,6 +334,7 @@ export function AdminPage() {
       socket.off('chat:status-change', onChatStatusChange);
       socket.off('admin:wall-update', onWallUpdate);
       socket.off('admin:questions-update', onQuestionsUpdate);
+      socket.off('stage:audio-update', onStageAudioUpdate);
     };
   }, [isAuthenticated]);
 
@@ -564,6 +586,28 @@ export function AdminPage() {
     });
   };
 
+  // Control remoto de audio del Stage (Auditorio)
+  const handleStageAudioAction = (
+    action: 'play' | 'pause' | 'restart' | 'set-volume' | 'toggle-mute',
+    value?: number | boolean
+  ) => {
+    const payload: any = {
+      action,
+      token: getAdminToken() || undefined
+    };
+    if (action === 'set-volume' && typeof value === 'number') {
+      payload.volume = value;
+    }
+    if (action === 'toggle-mute' && typeof value === 'boolean') {
+      payload.muted = value;
+    }
+    socket.emit('admin:set-stage-audio', payload, (res) => {
+      if (res?.success && res.audioState) {
+        setStageAudio(res.audioState);
+      }
+    });
+  };
+
   // Contingencias
   const handleReboundQuestion = (seconds = 15) => {
     socket.emit('admin:rebound-question', { seconds, token: getAdminToken() || undefined }, (res) => {
@@ -701,6 +745,24 @@ export function AdminPage() {
                 Conectados: <strong>{connectedCount}</strong> / {participants.length}
               </span>
             </div>
+
+            <button
+              type="button"
+              onClick={() => handleStageAudioAction(stageAudio.playing ? 'pause' : 'play')}
+              className={stageAudio.playing ? 'adm-btn-primary' : 'adm-btn-subtle'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderColor: stageAudio.playing ? '#35c27d' : undefined,
+                background: stageAudio.playing ? 'rgba(53, 194, 125, 0.18)' : undefined,
+                color: stageAudio.playing ? '#35c27d' : undefined
+              }}
+              title={stageAudio.playing ? 'Pausar música del auditorio (/stage)' : 'Reproducir música en el auditorio (/stage)'}
+            >
+              {stageAudio.playing ? <Volume2 size={14} /> : <VolumeX size={14} />}
+              <span>{stageAudio.playing ? 'Audio: En vivo' : 'Audio: Pausado'}</span>
+            </button>
 
             <button type="button" onClick={() => setShowQrModal(true)} className="adm-btn-subtle">
               <QrCode size={15} />
@@ -1240,6 +1302,134 @@ export function AdminPage() {
                 >
                   {chatEnabled ? 'Pausar Chat' : 'Habilitar Chat'}
                 </button>
+              </div>
+            </div>
+
+            {/* Consola de Control de Audio del Stage (Auditorio) */}
+            <div
+              className="adm-panel-card"
+              style={{
+                padding: '18px 20px',
+                borderLeft: '4px solid var(--primary)',
+                background: 'linear-gradient(135deg, rgba(255, 90, 31, 0.04) 0%, rgba(18, 20, 23, 0.95) 100%)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '8px',
+                      background: stageAudio.playing ? 'rgba(53, 194, 125, 0.15)' : 'rgba(255, 90, 31, 0.15)',
+                      border: `1px solid ${stageAudio.playing ? '#35c27d' : 'rgba(255, 90, 31, 0.3)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: stageAudio.playing ? '#35c27d' : 'var(--primary)',
+                      flexShrink: 0
+                    }}
+                  >
+                    <Music size={22} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#fff' }}>
+                        Pista de Audio en Vivo (/stage)
+                      </h3>
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: stageAudio.playing ? 'rgba(53, 194, 125, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                          color: stageAudio.playing ? '#35c27d' : 'var(--text-dim)',
+                          border: `1px solid ${stageAudio.playing ? 'rgba(53, 194, 125, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`
+                        }}
+                      >
+                        {stageAudio.playing ? '● Sonando en Auditorio' : 'Pausado'}
+                      </span>
+                    </div>
+                    <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-dim)' }}>
+                      🎵 {stageAudio.trackTitle}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Controles interactivos: Play, Pausa, Reinicio, Mute y Volumen */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {!stageAudio.playing ? (
+                    <button
+                      type="button"
+                      onClick={() => handleStageAudioAction('play')}
+                      className="adm-btn-primary"
+                      style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Play size={16} />
+                      <span>Play en Stage</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleStageAudioAction('pause')}
+                      className="adm-btn-danger-outline"
+                      style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Pause size={16} />
+                      <span>Pausar</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleStageAudioAction('restart')}
+                    className="adm-btn-subtle"
+                    title="Reiniciar pista desde el segundo 0"
+                    style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <RotateCcw size={14} />
+                    <span>Inicio</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleStageAudioAction('toggle-mute')}
+                    className={stageAudio.muted ? 'adm-btn-danger-outline' : 'adm-btn-subtle'}
+                    title={stageAudio.muted ? 'Reactivar sonido en Stage' : 'Silenciar sonido en Stage'}
+                    style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    {stageAudio.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                    <span>{stageAudio.muted ? 'Silenciado' : 'Mute'}</span>
+                  </button>
+
+                  {/* Slider de volumen sincronizado */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: 'rgba(255,255,255,0.04)',
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-subtle)'
+                    }}
+                  >
+                    <Volume2 size={14} color="var(--text-dim)" />
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={stageAudio.muted ? 0 : Math.round(stageAudio.volume * 100)}
+                      onChange={(e) => handleStageAudioAction('set-volume', Number(e.target.value) / 100)}
+                      style={{ width: '90px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                      title={`Volumen del Stage: ${Math.round(stageAudio.volume * 100)}%`}
+                    />
+                    <span style={{ fontSize: '12px', fontWeight: 700, minWidth: '32px', textAlign: 'right', color: '#fff' }}>
+                      {stageAudio.muted ? '0%' : `${Math.round(stageAudio.volume * 100)}%`}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
