@@ -274,6 +274,19 @@ export function AdminPage() {
       setParticipants((prev) =>
         prev.map((p) => (p.id === data.participantId ? { ...p, isConnected: data.isConnected } : p))
       );
+      setTeams((prev) =>
+        prev.map((t) => {
+          if (!t.members) return t;
+          const memberIndex = t.members.findIndex((m) => m.id === data.participantId);
+          if (memberIndex === -1) return t;
+          const updatedMembers = [...t.members];
+          updatedMembers[memberIndex] = {
+            ...updatedMembers[memberIndex],
+            isConnected: data.isConnected
+          };
+          return { ...t, members: updatedMembers };
+        })
+      );
     }
 
     function onMessageLogged(log: MessageLog) {
